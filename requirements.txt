@@ -32,7 +32,7 @@ pip-upgrader==1.4.15
 platformdirs==4.0.0
 pooch==1.8.0
 pycodestyle==2.11.1
-pycparser==2.21
+pycparser==3.0
 pydub==0.25.1
 pyinstaller==6.2.0
 pyinstaller-hooks-contrib==2023.10
