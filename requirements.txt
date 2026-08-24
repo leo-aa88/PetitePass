@@ -6,7 +6,7 @@ bcrypt==4.1.1
 certifi==2026.7.22
 cffi==2.1.1
 charset-normalizer==3.5.1
-click==8.1.7
+click==8.4.2
 colorclass==2.2.2
 cryptography==50.0.0
 cycler==0.12.1
@@ -16,7 +16,7 @@ docopt==0.6.2
 filelock==3.32.3
 fonttools==4.63.0
 gTTS==2.5.4
-idna==3.18
+idna==3.19
 importlib-metadata==6.9.0
 itsdangerous==2.2.0
 Jinja2==3.1.6
