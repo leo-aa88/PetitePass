@@ -1,8 +1,8 @@
 from PyQt5.QtCore import QTimer, pyqtSignal
 from PyQt5.QtWidgets import QDialog, QFormLayout, QLabel, QLineEdit, QMessageBox, QPushButton
 
-from core.vault import VAULT, VaultAuthError, VaultError
-from gui.createPasswordDialog import CreatePasswordDialog
+from petitepass.core.vault import VAULT, VaultAuthError, VaultError
+from petitepass.gui.createPasswordDialog import CreatePasswordDialog
 
 
 class AuthDialog(QDialog):

@@ -1,4 +1,4 @@
-.PHONY: setup install-requirements install-dev test lint build install uninstall clean
+.PHONY: setup install-requirements install-dev test lint typecheck build install uninstall clean
 
 setup:
 	python3 -m venv .venv
@@ -9,22 +9,27 @@ install-requirements:
 install-dev:
 	pip3 install -r requirements-dev.txt
 
+# Install the application (and the `petitepass` console script) via pip.
+install:
+	pip3 install .
+
+uninstall:
+	pip3 uninstall -y petitepass
+
 test:
 	python3 -m pytest tests -q
 
 lint:
 	ruff check src tests
 
+typecheck:
+	mypy
+
+# Standalone single-file binary (no Python required at runtime).
 build:
 	pyinstaller --onefile --name petitepass \
-		--add-data "src/core/data/10k-most-common.txt:core/data" \
-		src/main.py
-
-install: build
-	install -Dm755 dist/petitepass /usr/bin/petitepass
-
-uninstall:
-	rm -f /usr/bin/petitepass
+		--add-data "src/petitepass/core/data/10k-most-common.txt:petitepass/core/data" \
+		src/petitepass/app.py
 
 clean:
 	rm -rf build dist *.spec __pycache__

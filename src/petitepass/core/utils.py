@@ -3,7 +3,7 @@
 The Shannon-entropy helpers, the CLI ``verify_password``/``cls``/
 ``check_privileges`` functions and the NumPy/tabulate dependencies that used to
 live here have been removed. Strength estimation now lives in
-:mod:`core.strength`; there is no CLI.
+:mod:`petitepass.core.strength`; there is no CLI.
 """
 import secrets
 import string

@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
     QPushButton,
 )
 
-from core.utils import CHARSET_CHOICES, generate_password
+from petitepass.core.utils import CHARSET_CHOICES, generate_password
 
 
 class GeneratePasswordDialog(QDialog):

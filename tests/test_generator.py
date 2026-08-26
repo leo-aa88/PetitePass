@@ -2,7 +2,7 @@ from collections import Counter
 
 import pytest
 
-from core.utils import ONLY_NUMBERS, generate_password, get_random_string
+from petitepass.core.utils import ONLY_NUMBERS, generate_password, get_random_string
 
 
 def test_length_is_honored():

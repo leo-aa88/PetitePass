@@ -2,9 +2,9 @@ import sys
 
 from PyQt5.QtWidgets import QApplication, QDialog, QMainWindow, QStyleFactory, QWidget
 
-from core.vault import VAULT
-from gui.authDialog import AuthDialog
-from gui.mainWindow import MainWindow
+from petitepass.core.vault import VAULT
+from petitepass.gui.authDialog import AuthDialog
+from petitepass.gui.mainWindow import MainWindow
 
 
 class PasswordManagerApp(QMainWindow):
@@ -39,7 +39,12 @@ class PasswordManagerApp(QMainWindow):
             QApplication.quit()
 
 
-if __name__ == "__main__":
+def main() -> int:
+    """Console entry point (``petitepass``)."""
     app = QApplication(sys.argv)
-    ex = PasswordManagerApp()
-    sys.exit(app.exec_())
+    _ = PasswordManagerApp()
+    return app.exec_()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

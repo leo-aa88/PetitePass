@@ -136,5 +136,7 @@ SQLCipher_test
 Tests
 
 *.deb
-petitepass
+# Built PyInstaller binary (dist/petitepass); scoped so it does not match the
+# src/petitepass package directory.
+/dist/petitepass
 .venv-test/

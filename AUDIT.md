@@ -2,6 +2,8 @@
 
 *Audit date: 2026-08-26. Scope: full working tree at `main` (`9c050ad`) plus git history. No code was modified.*
 
+> **Status: historical.** This document describes the codebase **as it was found**. Its remediation roadmap has since been carried out in full: Phase 0/1 (security rework, #22), Phase 2 (Vault service, #23), Phase 3 (cipher pinning, platformdirs, typing/CI, #24), Phase 4 (backup/restore, auto-lock, search, #25), and the packaging cleanup that follows. The findings below are retained as the record of the original state, not the current one.
+
 ---
 
 ## 1. Executive Summary

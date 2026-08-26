@@ -4,7 +4,7 @@ Only the schema lives here now. The old module-level CLI functions
 (``create_password``/``update_password``/``change_db_password``/...) that used
 ``except Exception: create_anyway`` control flow and hand-built ``PRAGMA`` SQL
 have been removed. Both the database binding and all credential CRUD are owned
-by :mod:`core.vault`; this model is an implementation detail of the vault and
+by :mod:`petitepass.core.vault`; this model is an implementation detail of the vault and
 the GUI never touches it directly.
 """
 import datetime

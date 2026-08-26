@@ -17,9 +17,18 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/leo-aa88/PetitePass"
 
-# NOTE: the application is distributed as a PyInstaller binary / .deb (see the
-# Makefile), not as a pip-installable wheel, so no [build-system] is declared.
-# This file is the single home for project metadata and tool configuration.
+[project.scripts]
+petitepass = "petitepass.app:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"petitepass.core" = ["data/*.txt"]
 
 [tool.ruff]
 line-length = 100
@@ -36,7 +45,7 @@ ignore = ["E501"]
 [tool.mypy]
 # Type-checking is scoped to the logic core. The GUI (PyQt5) ships no type
 # information, so checking it would be noise, not signal.
-files = ["src/core"]
+files = ["src/petitepass/core"]
 python_version = "3.10"
 mypy_path = "src"
 warn_unused_ignores = true
