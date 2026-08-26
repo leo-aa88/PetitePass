@@ -29,8 +29,10 @@ on:
           - major
         default: patch
 
+# Read-only by default: the PR dry run only builds and uploads artifacts. The
+# version and publish jobs elevate to contents: write for the tag push / release.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.workflow }}-${{ github.ref }}
@@ -43,6 +45,8 @@ jobs:
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write   # commits the version bump and pushes the tag
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
       version: ${{ steps.resolve.outputs.version }}
@@ -168,6 +172,8 @@ jobs:
           # On a release, build the tagged tree; on a PR this is empty and the
           # PR head is used.
           ref: ${{ needs.version.outputs.tag }}
+          # This job only builds; it never pushes. Do not leave a token in git.
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -188,28 +194,43 @@ jobs:
           pyinstaller --onefile --windowed --name petitepass --paths src \
             --add-data "src/petitepass/core/data/10k-most-common.txt${sep}petitepass/core/data" \
             src/petitepass/app.py
-          test -s "dist/${bin}"
+          # --onefile emits dist/<bin>; on macOS --windowed also wraps it in a
+          # .app, from which we take the executable if the plain file is absent.
+          bin_path="dist/${bin}"
+          if [ ! -f "$bin_path" ] && [ -x "dist/petitepass.app/Contents/MacOS/petitepass" ]; then
+            bin_path="dist/petitepass.app/Contents/MacOS/petitepass"
+          fi
+          test -s "$bin_path"
           mkdir -p staging
-          cp "dist/${bin}" "staging/${bin}"
+          cp "$bin_path" "staging/${bin}"
 
-      - name: Verify binary
+      # --selftest is Qt-free and performs a real SQLCipher create/add/reopen/read
+      # round-trip, so it proves the native encryption extension AND the bundled
+      # wordlist actually work inside the frozen binary on this platform.
+      - name: Verify binary (POSIX)
+        if: ${{ matrix.os != 'windows' }}
         shell: bash
         run: |
           set -euo pipefail
-          # --selftest and --version are Qt-free, so they run without a display
-          # or Qt system libraries; --selftest also proves the bundled
-          # common-password list resolves inside the frozen binary. On Windows
-          # the --windowed build detaches stdout, so there we only assert the
-          # binary exists (checked in the build step).
-          if [ "${{ matrix.os }}" != "windows" ]; then
-            staging/petitepass --version
-            out="$(staging/petitepass --selftest)"
-            echo "$out"
-            case "$out" in
-              "selftest OK:"*) ;;
-              *) echo "selftest failed: $out" >&2; exit 1 ;;
-            esac
-          fi
+          staging/petitepass --version
+          out="$(staging/petitepass --selftest)"
+          echo "$out"
+          case "$out" in
+            "selftest OK:"*) ;;
+            *) echo "selftest failed: $out" >&2; exit 1 ;;
+          esac
+
+      - name: Verify binary (Windows)
+        if: ${{ matrix.os == 'windows' }}
+        shell: pwsh
+        run: |
+          # --windowed detaches stdout, so capture the exit code instead:
+          # Start-Process -Wait blocks even for a GUI-subsystem exe, and
+          # --selftest returns 0 only if the SQLCipher round-trip succeeded.
+          $p = Start-Process -FilePath "staging\petitepass.exe" `
+                 -ArgumentList "--selftest" -Wait -PassThru
+          Write-Host "selftest exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { exit 1 }
 
       - name: Upload binary
         uses: actions/upload-artifact@v7
@@ -226,6 +247,8 @@ jobs:
     needs: [version, build]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write   # creates the GitHub Release
     steps:
       - name: Download binaries
         uses: actions/download-artifact@v8
