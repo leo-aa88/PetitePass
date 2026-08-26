@@ -368,6 +368,78 @@ class Vault:
                     f"No credential named {name!r}.") from exc
             entry.delete_instance()
 
+    # -- backup / restore --------------------------------------------------
+
+    def backup_to(self, dest) -> None:
+        """Write an encrypted backup of the current vault to ``dest``.
+
+        The backup is a byte copy of the (already encrypted) vault, so it is
+        protected by the same master password. Written atomically (temp + fsync
+        + replace) with 0600 permissions.
+        """
+        self._require_open()
+        dest = str(dest)
+        tmp = dest + ".tmp"
+        self._unlink_quiet(tmp)
+        try:
+            shutil.copy2(self._path, tmp)
+            secure_existing_file(tmp)
+            fsync_file(tmp)
+            os.replace(tmp, dest)
+            fsync_dir(os.path.dirname(dest) or ".")
+            secure_existing_file(dest)
+        except OSError as exc:
+            self._unlink_quiet(tmp)
+            raise VaultError(f"Backup failed: {exc}") from exc
+
+    def restore_from(self, src, master: str) -> None:
+        """Replace the current vault with the backup at ``src``.
+
+        ``src`` must be a valid vault that decrypts under ``master``; this is
+        verified before anything is touched. The swap uses the same commit
+        discipline as rekey -- the live vault is replaced only via an atomic
+        os.replace of a verified copy -- so any failure leaves the current vault
+        intact and the session usable. On success the session is reopened under
+        the backup's master password.
+        """
+        self._require_open()
+        src = str(src)
+        if not os.path.exists(src):
+            raise VaultError("Backup file does not exist.")
+        # Verify the backup opens under `master` before disturbing anything.
+        self._safe_close(self._connect_verified(src, master))
+
+        current_master = self._master
+        tmp = self._path + ".restore.tmp"
+        self._unlink_quiet(tmp)
+
+        # Release the live file so the copy/replace is clean.
+        self._safe_close(self._db)
+        self._db = None
+        try:
+            shutil.copy2(src, tmp)
+            secure_existing_file(tmp)
+            fsync_file(tmp)
+            self._safe_close(self._connect_verified(tmp, master))  # verify copy
+        except Exception as exc:
+            self._unlink_quiet(tmp)
+            self._reopen(current_master)  # original untouched; restore session
+            raise VaultError(f"Restore failed; the vault was left unchanged: {exc}") from exc
+
+        try:
+            os.replace(tmp, self._path)  # commit
+        except OSError as exc:
+            self._unlink_quiet(tmp)
+            self._reopen(current_master)
+            raise VaultError(
+                "Restore could not be committed; the vault was left unchanged."
+            ) from exc
+
+        fsync_dir(os.path.dirname(self._path) or ".")
+        secure_existing_file(self._path)
+        self._master = master
+        self._reopen(master)
+
     # -- helpers -----------------------------------------------------------
 
     def _require_open(self) -> None:

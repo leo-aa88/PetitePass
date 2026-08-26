@@ -4,9 +4,13 @@ A simple and secure lightweight password manager coded with Python using SQLCiph
 
 ## Features
 
-- **Secure Storage:** Passwords are stored in an encrypted database.
+- **Secure Storage:** Passwords are stored in an encrypted SQLCipher database; authentication succeeds only if the master password decrypts the vault.
 - **Password Generator:** Generate strong, random passwords.
-- **Password Strength Check:** Evaluate the security level of your passwords.
+- **Password Strength Check:** zxcvbn-based strength estimation.
+- **Search:** Filter entries by name or username.
+- **Clipboard Safety:** Copied passwords auto-clear (and only if the clipboard still holds them).
+- **Encrypted Backup & Restore:** Export/import the vault to an encrypted backup file.
+- **Auto-lock:** The vault locks after a period of inactivity.
 - **Intuitive GUI:** Easy to use graphical interface.
 
 ## Screenshot
@@ -79,9 +83,8 @@ Contributions to improve PetitePass are welcome. Please follow these steps:
 
 This project is licensed under the GPL License - see the [LICENSE](LICENSE) file for details.
 
-## TODOs
+## Usage notes
 
-- Refactoring
-- Write unit tests
-- Allow user to edit password directly on the table
-- Generate backup
+- Right-click the table for actions (add / update / delete / generate / check strength / modify master password / back up / restore).
+- Double-click a row to edit that entry.
+- The vault auto-locks after inactivity; you will be asked to log in again.
