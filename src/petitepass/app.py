@@ -1,3 +1,4 @@
+import os
 import sys
 
 from petitepass import __version__
@@ -6,9 +7,19 @@ _USAGE = "usage: petitepass [--version] [--help]\n\nLaunches the PetitePass GUI.
 
 
 def _selftest() -> int:
-    """Verify the packaged/frozen build can find its bundled data. Qt-free."""
+    """Verify a packaged/frozen build end to end, Qt-free.
+
+    Checks the bundled common-password list resolves, and that SQLCipher
+    actually encrypts and decrypts on this platform (a real create → add →
+    reopen → read round-trip in a throwaway directory). This is what proves the
+    native SQLCipher extension is bundled and working in the release binary.
+    """
+    import shutil
+    import tempfile
+
     from petitepass.core.paths import common_password_file
     from petitepass.core.strength import is_common
+    from petitepass.core.vault import Vault
 
     location = common_password_file()
     if not location:
@@ -17,7 +28,26 @@ def _selftest() -> int:
     if not is_common("password"):
         print("selftest FAIL: common-password list not readable")
         return 1
-    print(f"selftest OK: petitepass {__version__}, wordlist={location}")
+
+    workdir = tempfile.mkdtemp(prefix="petitepass-selftest-")
+    try:
+        path = os.path.join(workdir, "selftest.db")
+        master = "selftest correct horse battery staple"
+        v = Vault(path)
+        v.create(master)
+        v.add("svc", "user", "s3cret")
+        v.close()
+        v2 = Vault(path)
+        v2.open(master)
+        ok = v2.get_password("svc") == "s3cret"
+        v2.close()
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+    if not ok:
+        print("selftest FAIL: SQLCipher round-trip did not return the stored value")
+        return 1
+    print(f"selftest OK: petitepass {__version__}; wordlist + SQLCipher round-trip passed")
     return 0
 
 

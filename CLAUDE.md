@@ -28,7 +28,7 @@ Apply a substantially higher bar than an ordinary desktop app. Before touching `
 
 ## Working style
 
-- Verify behavior against **real SQLCipher** rather than reasoning in the abstract — set up a throwaway venv (`sqlcipher3-binary`, `peewee`, `platformdirs`, `zxcvbn`, and `PyQt5` for the smoke test) and run the actual code.
+- Verify behavior against **real SQLCipher** rather than reasoning in the abstract — set up a throwaway venv (`sqlcipher3`, `peewee`, `platformdirs`, `zxcvbn`, and `PyQt5` for the smoke test) and run the actual code.
 - When a review raises an issue, reproduce it before fixing, and add a test that would fail if the fix were reverted.
 - Keep docstrings and README claims true to what the code does. If they diverge, fix the code, not the claim.
 - Don't add runtime dependencies casually; the runtime set is intentionally minimal and `pip-audit` gates CI.
