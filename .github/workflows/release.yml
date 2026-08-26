@@ -4,9 +4,16 @@
 # - On every pull request, the OS matrix is built as a DRY RUN (no tag, no
 #   publish) so a packaging break is caught before merge.
 # - A release is cut manually via workflow_dispatch (choose a semver bump), or
-#   by pushing a v*.*.* tag. The dispatch path bumps src/petitepass/__init__.py,
-#   commits, and tags — so the tag, the package metadata, and `petitepass
-#   --version` all agree.
+#   by pushing a v*.*.* tag.
+#
+#   Git tags are the source of truth for release versions. main is protected
+#   (changes must go through a PR), so a release never commits to it: the
+#   dispatch path computes the next version from the latest v*.*.* tag and
+#   pushes ONLY that tag. The binary is version-stamped from the tag at build
+#   time, so `petitepass --version` and the published artifacts match the tag.
+#   The committed src/petitepass/__init__.py version is only the floor used for
+#   source installs between releases; bump it in a normal PR when you want
+#   `pip install .` to report a newer number.
 #
 # PyInstaller cannot cross-compile, so each OS is built on its own native
 # runner. The bundled common-password list is added via --add-data (the src:dest
@@ -21,7 +28,7 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: "Semver bump over the current version in src/petitepass/__init__.py"
+        description: "Semver bump over the latest vX.Y.Z release tag"
         type: choice
         options:
           - patch
@@ -47,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: write   # commits the version bump and pushes the tag
+      contents: write   # pushes the release tag (never commits to main)
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
       version: ${{ steps.resolve.outputs.version }}
@@ -86,13 +93,21 @@ jobs:
           set -euo pipefail
           init="src/petitepass/__init__.py"
 
-          read_version() {
+          read_file_version() {
             python -c "import re,sys; print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', open('$init').read()).group(1))"
           }
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            cur="$(read_version)"
-            IFS='.' read -r major minor patch <<< "$cur"
+            git fetch --tags --force
+            # Base the bump on the highest existing v*.*.* tag, falling back to
+            # the version declared in __init__.py when there are no tags yet.
+            latest=""
+            while IFS= read -r t; do
+              if [[ "$t" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then latest="$t"; break; fi
+            done < <(git tag -l 'v*' --sort=-v:refname)
+            if [ -n "$latest" ]; then base="${latest#v}"; else base="$(read_file_version)"; fi
+
+            IFS='.' read -r major minor patch <<< "$base"
             case "${INPUT_BUMP:-patch}" in
               major) major=$((major + 1)); minor=0; patch=0 ;;
               minor) minor=$((minor + 1)); patch=0 ;;
@@ -101,38 +116,24 @@ jobs:
             esac
             version="${major}.${minor}.${patch}"
             tag="v${version}"
-            echo "Bump ${INPUT_BUMP:-patch}: ${cur} -> ${version}"
+            echo "Base ${base}, bump ${INPUT_BUMP:-patch} -> ${version}"
 
             if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
               echo "tag ${tag} already exists" >&2; exit 1
             fi
 
-            # Write the new version, commit, and tag so the tagged tree matches.
-            python - "$init" "$version" <<'PY'
-          import re, sys
-          path, version = sys.argv[1], sys.argv[2]
-          text = open(path).read()
-          text = re.sub(r'__version__\s*=\s*"[^"]+"', f'__version__ = "{version}"', text)
-          open(path, "w").write(text)
-          PY
+            # Tag ONLY. main is protected (changes must go through a PR), so the
+            # release must not push a commit to it. The binary is version-stamped
+            # from this tag at build time; the tag pushed with GITHUB_TOKEN does
+            # not start another workflow run, so no recursion into the tag trigger.
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add "$init"
-            git commit -m "chore(release): ${tag}"
             git tag -a "$tag" -m "$tag"
-            # A push with GITHUB_TOKEN does not start another workflow run, so
-            # the tag push below cannot recurse into the push trigger.
-            git push origin "HEAD:${GITHUB_REF_NAME}"
             git push origin "$tag"
           else
-            # Tag push: the tag is the source of truth; verify it matches the file.
+            # Tag push: the tag is the source of truth.
             tag="$REF_NAME"
             version="${tag#v}"
-            file_version="$(read_version)"
-            if [ "$version" != "$file_version" ]; then
-              echo "tag ${tag} does not match __version__ ${file_version}" >&2
-              exit 1
-            fi
           fi
 
           if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -184,6 +185,25 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Tags are the source of truth and no version commit lands on main, so
+      # stamp the resolved version into the working tree before freezing. Runs
+      # only on a real release (version is empty on the PR dry run). Fails closed:
+      # if the substitution does not land, the binary would freeze the wrong
+      # version while publish names the artifacts after the tag.
+      - name: Stamp version
+        if: ${{ needs.version.outputs.version != '' }}
+        shell: bash
+        run: |
+          python - "src/petitepass/__init__.py" "${{ needs.version.outputs.version }}" <<'PY'
+          import re, sys
+          path, version = sys.argv[1], sys.argv[2]
+          text = open(path).read()
+          new, n = re.subn(r'__version__\s*=\s*"[^"]+"', f'__version__ = "{version}"', text, count=1)
+          if n != 1:
+              sys.exit(f"failed to stamp __version__ in {path} (matched {n} times)")
+          open(path, "w").write(new)
+          PY
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -214,9 +234,17 @@ jobs:
       - name: Verify binary (POSIX)
         if: ${{ matrix.os != 'windows' }}
         shell: bash
+        env:
+          EXPECT_VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          staging/petitepass --version
+          ver="$(staging/petitepass --version)"
+          echo "$ver"
+          # On a real release, the frozen binary MUST report the tag version.
+          if [ -n "$EXPECT_VERSION" ] && [ "$ver" != "petitepass ${EXPECT_VERSION}" ]; then
+            echo "version mismatch: expected 'petitepass ${EXPECT_VERSION}', got '$ver'" >&2
+            exit 1
+          fi
           out="$(staging/petitepass --selftest)"
           echo "$out"
           case "$out" in
