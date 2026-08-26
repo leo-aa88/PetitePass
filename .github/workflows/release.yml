@@ -35,7 +35,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.workflow }}-${{ github.ref }}
+  # Group by source branch (PR) or ref (tag) so superseded runs are cancelled.
+  group: release-${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
