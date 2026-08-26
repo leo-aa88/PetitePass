@@ -25,9 +25,11 @@ lint:
 typecheck:
 	mypy
 
-# Standalone single-file binary (no Python required at runtime).
+# Standalone single-file binary (no Python required at runtime). Requires the
+# dev dependencies (PyInstaller); run `make install-dev` first. --windowed so a
+# GUI app does not spawn a console window.
 build:
-	pyinstaller --onefile --name petitepass \
+	pyinstaller --onefile --windowed --name petitepass \
 		--add-data "src/petitepass/core/data/10k-most-common.txt:petitepass/core/data" \
 		src/petitepass/app.py
 

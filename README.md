@@ -41,15 +41,15 @@ petitepass
 
 ```bash
 make setup && . .venv/bin/activate
-make install-requirements
+make install-dev    # includes PyInstaller, which `make build` needs
 make build          # produces dist/petitepass
 ```
 
-**Run from a checkout without installing:**
+**Run from a checkout without installing** (the package lives under `src/`, so put it on the path):
 
 ```bash
 pip install -r requirements.txt
-python -m petitepass.app        # (from the src/ directory: PYTHONPATH=src python -m petitepass.app)
+PYTHONPATH=src python -m petitepass.app
 ```
 
 ## Usage

@@ -17,7 +17,9 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/leo-aa88/PetitePass"
 
-[project.scripts]
+# gui-scripts (not scripts/console_scripts): PetitePass is a Qt GUI, so on
+# Windows the launcher must not attach a console window.
+[project.gui-scripts]
 petitepass = "petitepass.app:main"
 
 [build-system]

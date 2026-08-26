@@ -35,3 +35,19 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y libgl1 libegl1 libxkbcommon0 libdbus-1-3
         QT_QPA_PLATFORM=offscreen python tests/smoke_gui.py
+    - name: Packaged install check
+      # Install the real artifact and verify the entry point and bundled data
+      # from the INSTALLED package (run from a temp dir so src/ is not on path).
+      run: |
+        pip install .
+        cd "$RUNNER_TEMP"
+        python - <<'PY'
+        from importlib.metadata import entry_points
+        names = [e.name for e in entry_points(group="gui_scripts")]
+        assert "petitepass" in names, names
+        from petitepass.core.paths import common_password_file
+        from petitepass.core.strength import is_common
+        assert common_password_file() is not None, "bundled wordlist missing from wheel"
+        assert is_common("password"), "common-password list not readable from install"
+        print("packaged install OK:", names)
+        PY
