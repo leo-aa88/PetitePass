@@ -86,13 +86,21 @@ jobs:
           set -euo pipefail
           init="src/petitepass/__init__.py"
 
-          read_version() {
+          read_file_version() {
             python -c "import re,sys; print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', open('$init').read()).group(1))"
           }
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            cur="$(read_version)"
-            IFS='.' read -r major minor patch <<< "$cur"
+            git fetch --tags --force
+            # Base the bump on the highest existing v*.*.* tag, falling back to
+            # the version declared in __init__.py when there are no tags yet.
+            latest=""
+            while IFS= read -r t; do
+              if [[ "$t" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then latest="$t"; break; fi
+            done < <(git tag -l 'v*' --sort=-v:refname)
+            if [ -n "$latest" ]; then base="${latest#v}"; else base="$(read_file_version)"; fi
+
+            IFS='.' read -r major minor patch <<< "$base"
             case "${INPUT_BUMP:-patch}" in
               major) major=$((major + 1)); minor=0; patch=0 ;;
               minor) minor=$((minor + 1)); patch=0 ;;
@@ -101,38 +109,24 @@ jobs:
             esac
             version="${major}.${minor}.${patch}"
             tag="v${version}"
-            echo "Bump ${INPUT_BUMP:-patch}: ${cur} -> ${version}"
+            echo "Base ${base}, bump ${INPUT_BUMP:-patch} -> ${version}"
 
             if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
               echo "tag ${tag} already exists" >&2; exit 1
             fi
 
-            # Write the new version, commit, and tag so the tagged tree matches.
-            python - "$init" "$version" <<'PY'
-          import re, sys
-          path, version = sys.argv[1], sys.argv[2]
-          text = open(path).read()
-          text = re.sub(r'__version__\s*=\s*"[^"]+"', f'__version__ = "{version}"', text)
-          open(path, "w").write(text)
-          PY
+            # Tag ONLY. main is protected (changes must go through a PR), so the
+            # release must not push a commit to it. The binary is version-stamped
+            # from this tag at build time; the tag pushed with GITHUB_TOKEN does
+            # not start another workflow run, so no recursion into the tag trigger.
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add "$init"
-            git commit -m "chore(release): ${tag}"
             git tag -a "$tag" -m "$tag"
-            # A push with GITHUB_TOKEN does not start another workflow run, so
-            # the tag push below cannot recurse into the push trigger.
-            git push origin "HEAD:${GITHUB_REF_NAME}"
             git push origin "$tag"
           else
-            # Tag push: the tag is the source of truth; verify it matches the file.
+            # Tag push: the tag is the source of truth.
             tag="$REF_NAME"
             version="${tag#v}"
-            file_version="$(read_version)"
-            if [ "$version" != "$file_version" ]; then
-              echo "tag ${tag} does not match __version__ ${file_version}" >&2
-              exit 1
-            fi
           fi
 
           if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -178,6 +172,21 @@ jobs:
           ref: ${{ needs.version.outputs.tag }}
           # This job only builds; it never pushes. Do not leave a token in git.
           persist-credentials: false
+
+      # The release is tag-only (no version commit lands on main), so stamp the
+      # resolved version into the working tree before building. On a PR dry run
+      # version is empty and the repo's declared __version__ is used as-is.
+      - name: Stamp version
+        if: ${{ needs.version.outputs.version != '' }}
+        shell: bash
+        run: |
+          python - "src/petitepass/__init__.py" "${{ needs.version.outputs.version }}" <<'PY'
+          import re, sys
+          path, version = sys.argv[1], sys.argv[2]
+          text = open(path).read()
+          text = re.sub(r'__version__\s*=\s*"[^"]+"', f'__version__ = "{version}"', text)
+          open(path, "w").write(text)
+          PY
 
       - name: Set up Python
         uses: actions/setup-python@v7
