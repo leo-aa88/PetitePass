@@ -99,7 +99,7 @@ def _migrate(legacy: Path, new: Path) -> bool:
     try:
         shutil.copy2(legacy, tmp)
         _harden(tmp, stat.S_IRUSR | stat.S_IWUSR)
-        _fsync_file(tmp)              # fatal: propagates on failure
+        fsync_file(tmp)              # fatal: propagates on failure
     except OSError:
         _unlink_quiet(tmp)
         return False
@@ -115,7 +115,7 @@ def _migrate(legacy: Path, new: Path) -> bool:
     # steps must never report failure or the caller would use `legacy` while
     # `new` exists.
     try:
-        _fsync_dir(new.parent)
+        fsync_dir(new.parent)
         secure_existing_file(new)
         _unlink_quiet(legacy)
         legacy.parent.rmdir()
@@ -134,10 +134,13 @@ def _harden(path: Path, mode: int) -> None:
         pass
 
 
-def _fsync_file(path: Path) -> None:
-    # Durability barrier for the copy before it is committed with os.replace.
-    # A failure must NOT be swallowed: it propagates so the migration aborts
-    # with the original vault untouched (mirrors Vault._fsync_file).
+def fsync_file(path) -> None:
+    """Flush a file to disk. Shared durability barrier before an os.replace.
+
+    A failure is NOT swallowed: it propagates so the caller can abort before the
+    commit, leaving the original untouched. Used by both the legacy migration
+    here and Vault.rekey.
+    """
     fd = os.open(str(path), os.O_RDONLY)
     try:
         os.fsync(fd)
@@ -145,9 +148,12 @@ def _fsync_file(path: Path) -> None:
         os.close(fd)
 
 
-def _fsync_dir(directory: Path) -> None:
-    # Post-commit durability of the rename; unsupported on some platforms
-    # (e.g. Windows), and it runs after the commit, so failure is non-fatal.
+def fsync_dir(directory) -> None:
+    """Best-effort flush of a directory entry (post-commit).
+
+    Unsupported on some platforms (e.g. Windows) and runs after the commit
+    point, so failure is non-fatal and swallowed.
+    """
     try:
         fd = os.open(str(directory), os.O_RDONLY)
         try:

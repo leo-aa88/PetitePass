@@ -35,7 +35,7 @@ from playhouse.sqlcipher_ext import SqlCipherDatabase
 
 from core.credential import Credential
 from core.database import Password
-from core.paths import db_path, secure_existing_file
+from core.paths import db_path, fsync_dir, fsync_file, secure_existing_file
 
 
 class VaultError(Exception):
@@ -116,14 +116,19 @@ class Vault:
         # module-level VAULT singleton at import time does not trigger data-dir
         # creation or legacy migration as a side effect.
         self._explicit_path = str(path) if path is not None else None
+        self._resolved_path = None
         self._db = None
         self._master = None  # held in memory only while unlocked
 
     @property
     def _path(self) -> str:
-        if self._explicit_path is not None:
-            return self._explicit_path
-        return str(db_path())
+        # Resolve once and cache, so db_path() (and any legacy migration it
+        # performs) runs a single time rather than on every attribute access --
+        # in particular, rekey must not re-enter migration while a connection is
+        # live.
+        if self._resolved_path is None:
+            self._resolved_path = self._explicit_path or str(db_path())
+        return self._resolved_path
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -217,7 +222,7 @@ class Vault:
         try:
             shutil.copy2(self._path, tmp)
             secure_existing_file(tmp)
-            self._fsync_file(tmp)
+            fsync_file(tmp)
 
             work = self._connect_verified(tmp, current)  # current must open the copy
             try:
@@ -227,7 +232,7 @@ class Vault:
 
             # Prove the new key decrypts the copy on a fresh connection.
             self._safe_close(self._connect_verified(tmp, new))
-            self._fsync_file(tmp)
+            fsync_file(tmp)
         except Exception as exc:
             # The original vault was never touched; drop the copy and restore the
             # session on the old key.
@@ -250,7 +255,7 @@ class Vault:
         # Committed. The on-disk vault is now keyed with `new` whether or not the
         # session can be rebound, so advance the master and report a *rotation*
         # failure (not an auth failure) if reopening fails.
-        self._fsync_dir(os.path.dirname(self._path) or ".")
+        fsync_dir(os.path.dirname(self._path) or ".")
         secure_existing_file(self._path)
         self._master = new
         try:
@@ -439,31 +444,6 @@ class Vault:
                 f"CREATE UNIQUE INDEX IF NOT EXISTS "
                 f"{_TABLE}_name_unique ON {_TABLE} (name)")
         except (DatabaseError, IntegrityError):
-            pass
-
-    @staticmethod
-    def _fsync_file(path: str) -> None:
-        # Flush the working copy to disk before it is committed with os.replace.
-        # This is the durability barrier for the copy, so a failure must NOT be
-        # swallowed: it propagates and aborts the rekey with the vault unchanged.
-        fd = os.open(path, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-
-    @staticmethod
-    def _fsync_dir(directory: str) -> None:
-        # Durably record the rename after the commit. Directory fsync is not
-        # supported on every platform (e.g. Windows) and runs post-commit, so
-        # here -- unlike _fsync_file -- failure is genuinely non-fatal.
-        try:
-            fd = os.open(directory, os.O_RDONLY)
-            try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-        except OSError:
             pass
 
     @staticmethod

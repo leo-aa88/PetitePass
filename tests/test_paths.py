@@ -24,7 +24,9 @@ def isolated_dirs(tmp_path, monkeypatch):
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("XDG_DATA_HOME", str(data))
-    monkeypatch.setenv("LOCALAPPDATA", str(data))
+    # platformdirs reads WIN_PD_OVERRIDE_LOCAL_APPDATA before touching the real
+    # %LOCALAPPDATA% (which it resolves via ctypes, not the env var).
+    monkeypatch.setenv("WIN_PD_OVERRIDE_LOCAL_APPDATA", str(data))
     return tmp_path, home
 
 
@@ -42,12 +44,22 @@ def test_data_dir_is_isolated_and_0700(isolated_dirs):
         assert stat.S_IMODE(os.stat(d).st_mode) == 0o700
 
 
-def test_data_dir_is_not_nested_appname(isolated_dirs):
-    # appauthor=False: the directory must end in a single "PetitePass" segment,
-    # not the doubled "PetitePass/PetitePass" the default would produce.
-    d = paths.data_dir()
-    assert d.name == "PetitePass"
-    assert d.parent.name != "PetitePass"
+def test_data_dir_calls_platformdirs_with_appauthor_false(isolated_dirs, monkeypatch):
+    # The keyword exists only to stop Windows nesting PetitePass\PetitePass, and
+    # Unix ignores appauthor -- so a path-shape check on Linux CI cannot catch a
+    # revert. Assert the actual call instead.
+    seen = {}
+    real = paths.platformdirs.user_data_dir
+
+    def spy(*args, **kwargs):
+        seen["args"] = args
+        seen["kwargs"] = kwargs
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(paths.platformdirs, "user_data_dir", spy)
+    paths.data_dir()
+    assert seen["args"][0] == paths.APP_NAME
+    assert seen["kwargs"].get("appauthor") is False
 
 
 def test_fresh_install_uses_data_dir(isolated_dirs):
