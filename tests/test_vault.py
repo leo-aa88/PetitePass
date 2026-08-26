@@ -177,6 +177,45 @@ def test_legacy_vault_without_unique_index_is_migrated(vault_path):
         Password.create(name="a", password="2")
 
 
+def test_vault_cipher_params_are_load_bearing(vault_path):
+    # Opening the vault with a mismatched kdf_iter must fail, proving the pinned
+    # parameters actually govern key derivation (and are not cosmetic).
+    from peewee import DatabaseError
+    from playhouse.sqlcipher_ext import SqlCipherDatabase
+
+    _fresh(vault_path, MASTER).close()
+
+    mismatched = SqlCipherDatabase(
+        vault_path, passphrase=MASTER, pragmas=[("kdf_iter", 64000)])
+    mismatched.connect()
+    with pytest.raises(DatabaseError):
+        mismatched.execute_sql("SELECT 1 FROM password LIMIT 1").fetchone()
+    mismatched.close()
+
+    # The Vault (pinned to the correct params) opens it fine.
+    v = Vault(vault_path)
+    v.open(MASTER)
+    v.close()
+
+
+def test_legacy_default_created_vault_still_opens(vault_path):
+    # A vault created by the bare library (no explicit cipher pragmas), as older
+    # PetitePass versions did, must still open under the now-pinned Vault.
+    from playhouse.sqlcipher_ext import SqlCipherDatabase
+
+    raw = SqlCipherDatabase(vault_path, passphrase=MASTER)  # no pragmas
+    Password._meta.database = raw
+    raw.connect()
+    raw.create_tables([Password])
+    Password.create(name="gh", password="s3cret")
+    raw.close()
+
+    v = Vault(vault_path)
+    v.open(MASTER)
+    assert Password.get(Password.name == "gh").password == "s3cret"
+    v.close()
+
+
 def test_create_null_byte_master_rejected_leaves_no_file(vault_path):
     # A NUL makes peewee raise ValueError from PRAGMA key='%s'. It must be
     # rejected before any file is written, so exists() cannot later treat a

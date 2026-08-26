@@ -89,14 +89,41 @@ _SENTINEL = f"SELECT 1 FROM {_TABLE} LIMIT 1"
 # Suffix for the transient rekey working copy (see module docstring).
 _REKEY_TMP_SUFFIX = ".rekey.tmp"
 
+# SQLCipher cipher parameters, pinned explicitly rather than inherited from
+# whatever the linked sqlcipher3 build happens to default to. These are the
+# SQLCipher 4 defaults, so existing vaults created before pinning open
+# unchanged; owning them in code means a future library bump that changes a
+# default cannot silently make old vaults unreadable. Applied on every
+# connection (peewee runs them right after PRAGMA key).
+_CIPHER_PRAGMAS = [
+    ("cipher_page_size", 4096),
+    ("kdf_iter", 256000),
+    ("cipher_hmac_algorithm", "HMAC_SHA512"),
+    ("cipher_kdf_algorithm", "PBKDF2_HMAC_SHA512"),
+]
+
+
+def _make_db(path, master):
+    """Construct a SqlCipherDatabase with the pinned cipher configuration."""
+    return SqlCipherDatabase(str(path), passphrase=master, pragmas=_CIPHER_PRAGMAS)
+
 
 class Vault:
     """Owns the encrypted database connection and the model binding."""
 
     def __init__(self, path=None):
-        self._path = str(path) if path is not None else str(db_path())
+        # Resolve the default path lazily (on first use), so constructing the
+        # module-level VAULT singleton at import time does not trigger data-dir
+        # creation or legacy migration as a side effect.
+        self._explicit_path = str(path) if path is not None else None
         self._db = None
         self._master = None  # held in memory only while unlocked
+
+    @property
+    def _path(self) -> str:
+        if self._explicit_path is not None:
+            return self._explicit_path
+        return str(db_path())
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -116,7 +143,7 @@ class Vault:
             raise VaultExistsError("A vault already exists at this location.")
 
         previous = Password._meta.database
-        db = SqlCipherDatabase(self._path, passphrase=master)
+        db = _make_db(self._path, master)
         # create_tables acts through the model's bound database, so binding must
         # precede it here; on failure we restore the previous bind and remove
         # the half-written file so a retry is not blocked by VaultExistsError.
@@ -382,7 +409,7 @@ class Vault:
 
         Returns an open, unbound connection; the caller owns its lifecycle.
         """
-        db = SqlCipherDatabase(path, passphrase=master)
+        db = _make_db(path, master)
         try:
             db.connect()
             db.execute_sql(_SENTINEL).fetchone()

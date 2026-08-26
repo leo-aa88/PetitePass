@@ -2,10 +2,8 @@
 # (The previous file was a committed `pip freeze` of ~40 packages including
 #  NumPy, Numba, gTTS, pydub, requests and matplotlib's font stack, none of
 #  which the application imports.)
-# Data lives under ~/PetitePass via pathlib (see core/paths.py); platformdirs
-# is intentionally NOT a dependency until the Phase 3 data-location migration
-# actually imports it.
 PyQt5==5.15.11
 peewee==4.4.0
+platformdirs==4.11.4
 sqlcipher3-binary==0.6.0
 zxcvbn==4.5.0

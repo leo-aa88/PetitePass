@@ -52,7 +52,7 @@ To install and run the password manager on your system, follow these steps:
 
 At first run, the program will request a password creation for managing the password database. This password must satisfy certain requirements and be entered twice. THIS PASSWORD CANNOT BE RECOVERED WITHOUT RESETTING THE DATABASE.
 
-When the password is created, an encrypted database file (`48cccca3bab2ad18832233ee8dff1b0b.db`) is created under `~/PetitePass/` with owner-only (`0600`) permissions. This single file is the entire vault: the master password is never stored anywhere, and authentication succeeds only if the master password actually decrypts this file. IF THIS FILE IS DELETED, ALL STORED DATA WILL BE LOST. To achieve the most security, keep the vault offline.
+When the password is created, an encrypted database file (`48cccca3bab2ad18832233ee8dff1b0b.db`) is created in the platform's standard per-user data directory (`~/.local/share/PetitePass/` on Linux, `~/Library/Application Support/PetitePass/` on macOS, `%LOCALAPPDATA%\PetitePass\` on Windows) with owner-only (`0600`) permissions. A vault from an older version stored under `~/PetitePass/` is migrated to the new location automatically on first launch. This single file is the entire vault: the master password is never stored anywhere, and authentication succeeds only if the master password actually decrypts this file. IF THIS FILE IS DELETED, ALL STORED DATA WILL BE LOST. To achieve the most security, keep the vault offline.
 
 Please note that while this password manager is designed to be secure, it's essential to keep your master password safe and to use the application responsibly.
 
