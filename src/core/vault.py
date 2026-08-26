@@ -61,12 +61,15 @@ class VaultRotatedError(VaultError):
     """
 
 
-# Cheap query that forces SQLCipher to decrypt page 1; raises DatabaseError on
-# a wrong key. This is what makes "the key is correct" observable.
-_SENTINEL = "SELECT count(*) FROM sqlite_master"
-
-# Table name peewee derives from the Password model; used for schema migration.
+# Table name peewee derives from the Password model.
 _TABLE = Password._meta.table_name
+
+# Sentinel query proving "this is our vault AND it decrypts under this key".
+# Reading the schema to resolve the table forces page-1 decryption, so a wrong
+# key raises DatabaseError (HMAC failure); requiring the application table
+# additionally rejects a hollow file (0-byte / empty SQLCipher db with no
+# password table), which SQLCipher would otherwise initialize under ANY key.
+_SENTINEL = f"SELECT 1 FROM {_TABLE} LIMIT 1"
 
 # Suffix for the transient rekey working copy (see module docstring).
 _REKEY_TMP_SUFFIX = ".rekey.tmp"
@@ -106,7 +109,10 @@ class Vault:
         try:
             db.connect()
             db.create_tables([Password])
-        except DatabaseError as exc:
+        except Exception as exc:
+            # Any failure -- not only DatabaseError. peewee raises ValueError for
+            # a NUL in the passphrase, which must not be allowed to leave a
+            # 0-byte file that exists() would then treat as a vault.
             self._safe_close(db)
             Password._meta.database = previous
             self._unlink_quiet(self._path)
@@ -147,9 +153,11 @@ class Vault:
 
         ``current`` is checked against the in-memory master as a UX guard (not a
         cryptographic check -- the vault is already unlocked). The rotation is
-        performed on a temporary copy and swapped in with an atomic replace; the
-        live vault file is never mutated in place, so any failure leaves it
-        openable under ``current``.
+        performed on a temporary copy and swapped in with an atomic replace.
+        Before the ``os.replace`` commit, any failure leaves the vault openable
+        under ``current`` (``VaultError``). After the commit the vault is keyed
+        with ``new``; if the session cannot then be rebound, ``VaultRotatedError``
+        is raised and the caller must reopen with ``new``.
         """
         if not self.is_open:
             raise VaultError("Vault is not open.")
@@ -229,6 +237,11 @@ class Vault:
         # (peewee skips PRAGMA key when the passphrase is falsy). Refuse it.
         if not master:
             raise VaultError("The master password must not be empty.")
+        # peewee interpolates the passphrase into PRAGMA key='%s'; a NUL raises
+        # ValueError from the driver, so reject it before it can throw past a
+        # handler and leave a half-written file behind.
+        if "\x00" in master:
+            raise VaultError("The master password must not contain a null character.")
 
     def _connect_verified(self, path: str, master: str) -> SqlCipherDatabase:
         """Connect and prove the key decrypts, or raise VaultAuthError.
@@ -242,7 +255,8 @@ class Vault:
         except DatabaseError as exc:
             self._safe_close(db)
             raise VaultAuthError(
-                "Incorrect master password, or the vault is corrupt."
+                "Incorrect master password, or the file is not a valid "
+                "PetitePass vault."
             ) from exc
         return db
 

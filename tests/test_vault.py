@@ -177,6 +177,66 @@ def test_legacy_vault_without_unique_index_is_migrated(vault_path):
         Password.create(name="a", password="2")
 
 
+def test_create_null_byte_master_rejected_leaves_no_file(vault_path):
+    # A NUL makes peewee raise ValueError from PRAGMA key='%s'. It must be
+    # rejected before any file is written, so exists() cannot later treat a
+    # 0-byte leftover as a vault.
+    with pytest.raises(VaultError):
+        Vault(vault_path).create("correct horse\x00battery staple")
+    assert not os.path.exists(vault_path)
+    # A subsequent create must not be blocked by a phantom VaultExistsError.
+    v = Vault(vault_path)
+    v.create(MASTER)
+    v.close()
+
+
+def test_create_nondatabaseerror_failure_unlinks_partial(vault_path, monkeypatch):
+    # Any create failure (not just DatabaseError) must restore the bind and
+    # remove the half-written file.
+    from playhouse.sqlcipher_ext import SqlCipherDatabase
+
+    previous = Password._meta.database
+
+    def boom(self, models):
+        raise ValueError("simulated non-DatabaseError create failure")
+
+    monkeypatch.setattr(SqlCipherDatabase, "create_tables", boom)
+    with pytest.raises(VaultError):
+        Vault(vault_path).create(MASTER)
+    monkeypatch.undo()
+
+    assert not os.path.exists(vault_path)
+    assert Password._meta.database is previous  # bind restored
+    v = Vault(vault_path)
+    v.create(MASTER)  # not blocked by VaultExistsError
+    v.close()
+
+
+def test_open_rejects_zero_byte_file(vault_path):
+    # A hollow file must not authenticate under an arbitrary password. SQLCipher
+    # initializes a 0-byte file as an empty db under any key; the sentinel must
+    # still refuse it because it has no password table.
+    open(vault_path, "wb").close()
+    v = Vault(vault_path)
+    with pytest.raises(VaultAuthError):
+        v.open("any nonempty passphrase at all")
+    assert v.is_open is False
+    assert Password._meta.database is None
+
+
+def test_open_rejects_valid_sqlcipher_db_without_password_table(vault_path):
+    from playhouse.sqlcipher_ext import SqlCipherDatabase
+
+    # A real, correctly-keyed SQLCipher db that is NOT a PetitePass vault.
+    raw = SqlCipherDatabase(vault_path, passphrase=MASTER)
+    raw.connect()
+    raw.execute_sql("CREATE TABLE other (x)")
+    raw.close()
+
+    with pytest.raises(VaultAuthError):
+        Vault(vault_path).open(MASTER)  # right key, but not our vault
+
+
 def _tmp_of(path):
     return path + ".rekey.tmp"
 
