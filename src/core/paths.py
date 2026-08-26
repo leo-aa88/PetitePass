@@ -12,8 +12,11 @@ from pathlib import Path
 # Kept identical to the historical name so existing vaults keep opening.
 DB_FILENAME = "48cccca3bab2ad18832233ee8dff1b0b.db"
 
-# Bundled list of the 10k most common passwords, searched in install locations.
+# Bundled list of the 10k most common passwords. The copy shipped alongside the
+# code is authoritative and always present (source checkout and PyInstaller
+# bundle alike); the install locations are fallbacks.
 _COMMON_PASSWORD_LOCATIONS = (
+    str(Path(__file__).resolve().parent / "data" / "10k-most-common.txt"),
     "/usr/share/10k-most-common.txt",
     str(Path(__file__).resolve().parents[2]
         / "petitepass_package" / "usr" / "share" / "10k-most-common.txt"),

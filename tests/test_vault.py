@@ -116,3 +116,74 @@ def test_vault_file_is_owner_only(vault_path):
     _fresh(vault_path, MASTER).close()
     mode = stat.S_IMODE(os.stat(vault_path).st_mode)
     assert mode == 0o600, oct(mode)
+
+
+def test_empty_master_refused_and_no_file_created(vault_path):
+    from core.vault import VaultError
+    with pytest.raises(VaultError):
+        Vault(vault_path).create("")
+    # An empty passphrase would have produced a *plaintext* SQLite file.
+    assert not os.path.exists(vault_path)
+
+
+def test_created_vault_is_not_plaintext(vault_path):
+    _fresh(vault_path, MASTER).close()
+    with open(vault_path, "rb") as f:
+        header = f.read(16)
+    assert header != b"SQLite format 3\x00", "vault must be encrypted"
+
+
+def test_open_refuses_when_already_open(vault_path):
+    from core.vault import VaultError
+    v = _fresh(vault_path, MASTER)
+    with pytest.raises(VaultError):
+        v.open(MASTER)
+    v.close()
+
+
+def test_failed_open_leaves_clean_state(vault_path):
+    _fresh(vault_path, MASTER).close()
+    v = Vault(vault_path)
+    with pytest.raises(VaultAuthError):
+        v.open("wrong")
+    # A failed unlock must not report the vault as open.
+    assert v.is_open is False
+    # ...and the global model must not be left bound to a closed connection.
+    assert Password._meta.database is None
+
+
+def test_legacy_vault_without_unique_index_is_migrated(vault_path):
+    from peewee import IntegrityError
+    from playhouse.sqlcipher_ext import SqlCipherDatabase
+
+    # Build a pre-uniqueness vault: name has no UNIQUE index.
+    raw = SqlCipherDatabase(vault_path, passphrase=MASTER)
+    raw.connect()
+    raw.execute_sql(
+        "CREATE TABLE password (id INTEGER PRIMARY KEY, name TEXT, "
+        "username TEXT, password TEXT, timestamp DATETIME, updated DATETIME)")
+    raw.execute_sql("INSERT INTO password (name, password) VALUES ('a', '1')")
+    raw.close()
+
+    Vault(vault_path).open(MASTER)  # must migrate in the unique index
+    with pytest.raises(IntegrityError):
+        Password.create(name="a", password="2")
+
+
+def test_legacy_vault_with_existing_dupes_still_opens(vault_path):
+    from playhouse.sqlcipher_ext import SqlCipherDatabase
+
+    raw = SqlCipherDatabase(vault_path, passphrase=MASTER)
+    raw.connect()
+    raw.execute_sql(
+        "CREATE TABLE password (id INTEGER PRIMARY KEY, name TEXT, "
+        "username TEXT, password TEXT, timestamp DATETIME, updated DATETIME)")
+    raw.execute_sql("INSERT INTO password (name, password) VALUES ('a', '1')")
+    raw.execute_sql("INSERT INTO password (name, password) VALUES ('a', '2')")
+    raw.close()
+
+    # Index can't be built, but the vault must still open (not lock the user out).
+    v = Vault(vault_path)
+    v.open(MASTER)
+    assert Password.select().count() == 2
+    v.close()

@@ -7,9 +7,11 @@ to guess: ``abcdefgh`` scored 100% ("strong") while ``Password1!Password1!``
 scored "weak". It also enforced mandatory upper/lower/special character classes
 that reject strong passphrases.
 
-This module uses zxcvbn (a real guessability estimator) for advice, plus a
-minimum length and a common-password blocklist as the only hard gates. Key
-stretching is done by SQLCipher's KDF; this file is purely a UI heuristic.
+This module is the master-password *policy*. It has three hard gates --
+minimum length, a common-password blocklist, and a minimum zxcvbn score -- and
+zxcvbn also supplies human-readable advice for the strength dialog. It is a
+policy layer only: cryptographic key stretching is done entirely by SQLCipher's
+KDF and is independent of anything decided here.
 """
 from dataclasses import dataclass
 
@@ -71,8 +73,8 @@ def check_master_policy(password: str) -> str | None:
                 f"{MIN_MASTER_LENGTH} characters long.")
     if is_common(password):
         return "That password is in the list of most common passwords."
-    if evaluate(password).score < MIN_MASTER_SCORE:
-        result = evaluate(password)
+    result = evaluate(password)
+    if result.score < MIN_MASTER_SCORE:
         hint = result.warning or (result.suggestions[0] if result.suggestions else "")
         return "That password is too easy to guess." + (f" {hint}" if hint else "")
     return None

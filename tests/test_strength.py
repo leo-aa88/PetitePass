@@ -1,8 +1,21 @@
-from core.strength import MIN_MASTER_LENGTH, check_master_policy, evaluate
+from core.strength import MIN_MASTER_LENGTH, check_master_policy, evaluate, is_common
 
 
 def test_short_password_rejected():
     assert check_master_policy("aA1!x") is not None
+
+
+def test_common_list_is_actually_loaded():
+    # Guards against is_common silently returning False (missing/unshipped list).
+    assert is_common("password") is True
+    assert is_common("this-string-is-not-in-any-common-list-xyzzy") is False
+
+
+def test_long_common_password_rejected_by_policy():
+    # >= MIN_MASTER_LENGTH so it passes the length gate and actually reaches the
+    # common-list check (the old test used 8-char "password", which never did).
+    assert len("unbelievable") >= MIN_MASTER_LENGTH
+    assert check_master_policy("unbelievable") is not None
 
 
 def test_long_passphrase_accepted_without_symbols():

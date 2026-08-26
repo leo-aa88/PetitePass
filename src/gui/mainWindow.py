@@ -79,7 +79,12 @@ class MainWindow(QWidget):
             QHeaderView.ResizeToContents)
 
         try:
-            rows = list(Password.select())
+            # Select only the columns needed to draw the (masked) list; the
+            # password column is fetched on demand in _lookup, so plaintext is
+            # never loaded merely to render the table.
+            rows = list(Password.select(
+                Password.name, Password.username,
+                Password.timestamp, Password.updated))
         except Exception as exc:
             QMessageBox.critical(
                 self, "Vault error",

@@ -1,4 +1,4 @@
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import QTimer, pyqtSignal
 from PyQt5.QtWidgets import QDialog, QFormLayout, QLabel, QLineEdit, QMessageBox, QPushButton
 
 from core.vault import VAULT, VaultAuthError, VaultError
@@ -12,12 +12,17 @@ class AuthDialog(QDialog):
 
     def __init__(self):
         super().__init__()
+        self._first_run_started = False
         self.initUI()
         self.setFixedHeight(80)
         self.setFixedWidth(400)
         self.setWindowTitle("Login")
 
     def initUI(self):
+        # Build widgets only. The first-run create flow is deliberately NOT run
+        # from __init__: at that point PasswordManagerApp has not connected the
+        # login_successful signal and exec_() has not started, so an accept()
+        # here would be discarded by QDialog::exec()'s result reset.
         layout = QFormLayout(self)
         self.passwordField = QLineEdit(self)
         self.passwordField.setEchoMode(QLineEdit.Password)
@@ -27,11 +32,12 @@ class AuthDialog(QDialog):
         self.buttons.clicked.connect(self.handleLogin)
         layout.addWidget(self.buttons)
 
-        if not VAULT.exists():
-            QMessageBox.information(
-                self, "No vault found",
-                "No vault exists yet. Please create a master password.")
-            self.handleNewPasswordCreation()
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Runs once, after the dialog is shown and the signal is connected.
+        if not self._first_run_started and not VAULT.exists():
+            self._first_run_started = True
+            QTimer.singleShot(0, self.handleNewPasswordCreation)
 
     def handleNewPasswordCreation(self):
         dialog = CreatePasswordDialog(self)

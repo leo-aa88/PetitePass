@@ -16,7 +16,9 @@ lint:
 	ruff check src tests
 
 build:
-	pyinstaller --onefile --name petitepass src/main.py
+	pyinstaller --onefile --name petitepass \
+		--add-data "src/core/data/10k-most-common.txt:core/data" \
+		src/main.py
 
 install: build
 	install -Dm755 dist/petitepass /usr/bin/petitepass

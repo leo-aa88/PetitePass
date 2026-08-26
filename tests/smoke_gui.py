@@ -41,6 +41,16 @@ def check(label, ok):
 
 app = QApplication(sys.argv)
 
+# 0. Constructing AuthDialog must have NO side effects: no vault is created and
+#    nothing is opened just by building the widget (first-run must be driven
+#    from showEvent, not __init__).
+from gui.authDialog import AuthDialog  # noqa: E402
+
+_auth = AuthDialog()
+check("AuthDialog.__init__ does not create a vault", not VAULT.exists())
+check("AuthDialog.__init__ does not open a vault", not VAULT.is_open)
+_auth.deleteLater()
+
 # 1. Create the vault through the real dialog slot.
 cpd = CreatePasswordDialog()
 cpd.passwordField.setText(MASTER)

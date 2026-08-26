@@ -5,11 +5,12 @@ from core.vault import VAULT, VaultAuthError, VaultError
 
 
 class ModifyMasterPasswordDialog(QDialog):
-    """Rotate the master password atomically through the Vault.
+    """Rotate the master password through the Vault.
 
-    There is no sidecar verifier to update: the rekey is a single SQLCipher
-    operation that either fully succeeds or leaves the old key untouched, so
-    there is no partial-failure state that can lock the user out.
+    There is no sidecar verifier to update, so the verifier/vault desync that
+    could previously lock the user out is gone. The Vault additionally takes an
+    on-disk backup before the SQLCipher rekey and restores it if the new key
+    cannot be verified, so a failed rotation leaves the old key working.
     """
 
     def __init__(self, parent=None):

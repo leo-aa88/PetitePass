@@ -36,7 +36,15 @@ class PasswordDialog(QDialog):
             return
 
         try:
-            # Uniqueness is enforced by the DB constraint, not a racy pre-check.
+            # Primary guard is the DB unique index (added on create and migrated
+            # in on open). The application-level pre-check is a fallback for
+            # legacy vaults whose index could not be built because they already
+            # contained duplicate names.
+            if Password.select().where(Password.name == name).exists():
+                QMessageBox.warning(
+                    self, "Error",
+                    "That name already exists. Please choose another name.")
+                return
             Password.create(name=name, username=username, password=password)
         except IntegrityError:
             QMessageBox.warning(
