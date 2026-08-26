@@ -157,9 +157,9 @@ jobs:
           - runner: ubuntu-latest
             os: linux
             arch: x86_64
-          - runner: macos-13
-            os: macos
-            arch: x86_64
+          # macOS is Apple Silicon only: the Intel (macos-13) hosted runners are
+          # being sunset and queue indefinitely, and a universal2 binary is not
+          # possible because PyQt5 ships no universal2 wheel.
           - runner: macos-latest
             os: macos
             arch: arm64
