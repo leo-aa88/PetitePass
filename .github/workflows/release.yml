@@ -161,11 +161,11 @@ jobs:
           # macos-13 = Intel, macos-latest = Apple Silicon. Both are shipped.
           # (A single universal2 binary is not possible: PyQt5 has no universal2
           # wheel.) Intel hosted runners can be slow to assign.
-          - runner: macos-13
-            os: macos
-            arch: x86_64
+          - runner: macos-15-intel
+            os: darwin
+            arch: amd64
           - runner: macos-latest
-            os: macos
+            os: darwin
             arch: arm64
           - runner: windows-latest
             os: windows
