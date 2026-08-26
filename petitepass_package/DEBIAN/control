@@ -1,9 +1,0 @@
-Package: petitepass
-Version: 2.0.5
-Architecture: amd64
-Maintainer: Leonardo Araujo <leonardo.aa88@gmail.com>
-Description: Simple and secure lightweight password manager
- PetitePass is a simple and secure lightweight password manager coded with Python using SQLCipher for SQLite database encryption and PyQt.
-Priority: optional
-Section: utils
-Homepage: https://github.com/leo-aa88/PetitePass
