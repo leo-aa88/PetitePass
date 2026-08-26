@@ -1,0 +1,48 @@
+---
+description: PetitePass project rules — a password manager; security invariants are hard constraints.
+globs:
+  - "src/**"
+  - "tests/**"
+alwaysApply: true
+---
+
+# PetitePass rules
+
+This is a **password manager**. Hold every change to a higher standard than an
+ordinary app. The canonical guidance is [AGENTS.md](../../AGENTS.md) and the
+threat model / invariants in [docs/DESIGN.md](../../docs/DESIGN.md).
+
+## Hard constraints (do not regress)
+
+- **Authentication is decryption.** A session is valid only if the vault
+  decrypts *and* the `password` table is present. Never reintroduce a sidecar
+  verifier or a boolean "is authenticated" flag.
+- **No hand-built PRAGMA.** The master password reaches SQLCipher only through
+  peewee's escaping `passphrase=` / `rekey()` API. Never
+  `execute_sql(f"PRAGMA key = '{master}'")`.
+- **Reject empty/NUL master** before creating or replacing any file.
+- **Atomic vault replacement.** Rekey / restore / migration work on a *verified
+  copy* and commit at a single `os.replace`; `fsync` of the copy is fatal.
+  *Before* the commit a failure leaves the previous vault openable under the
+  current master. *After* the commit the vault is the new one (only
+  `paths._migrate`, whose post-commit work is pure cleanup, never flips).
+- **Distinct post-commit errors.** A reopen failure *after* `os.replace` is
+  `VaultRotatedError` / `VaultRestoredError`, never an auth error. The change
+  committed; the old master no longer opens the vault. Don't swallow it or call
+  it "unchanged".
+- **The `except Exception` in `Vault.create` / `rekey` / `restore_from` is
+  deliberate** — it stops a NUL/`ValueError` from leaving a half-written file;
+  do not narrow it. GUI slots catch `VaultError` only.
+- **GUI never touches the ORM.** All credential access goes through `VAULT.*`;
+  the service translates peewee `DatabaseError` into `VaultError`; GUI slots
+  catch `VaultError`.
+- **Never load password ciphertext to render the list** (`list_credentials`
+  selects non-password columns).
+
+## Workflow
+
+- Verify against **real SQLCipher**; do not mock the database in security tests.
+- Run `make lint && make typecheck && make test` and the headless GUI smoke test
+  (`QT_QPA_PLATFORM=offscreen python tests/smoke_gui.py`) before proposing a change.
+- Keep the runtime dependency set minimal; `pip-audit` gates CI.
+- Keep docstrings/README truthful to the code.
