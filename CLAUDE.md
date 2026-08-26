@@ -21,8 +21,9 @@ Apply a substantially higher bar than an ordinary desktop app. Before touching `
 - Authentication is decryption — never a sidecar hash.
 - The master password reaches SQLCipher only through peewee's escaping API — never `f"PRAGMA key = '{...}'"`.
 - Reject empty/NUL master passwords before creating or replacing a file.
-- Vault-replacing operations are atomic (verified copy → `os.replace`); a failure leaves the old vault openable; `fsync` of the copy is fatal.
-- Post-commit failures raise `VaultRotatedError` / `VaultRestoredError`, never an auth error.
+- Vault-replacing operations are atomic, committing at a single `os.replace` (`fsync` of the copy is fatal). *Before* the commit a failure leaves the old vault openable; *after* it the new vault is in place — see the next point.
+- A reopen failure *after* the commit raises `VaultRotatedError` / `VaultRestoredError` (never an auth error): the change committed and the old master no longer opens the vault. Don't report it as "unchanged" or swallow it.
+- The `except Exception` handlers in `Vault.create` / `rekey` / `restore_from` are deliberate (they stop a NUL/`ValueError` from leaving a half-written file); don't narrow them. The GUI catches `VaultError` only.
 - The GUI never touches the ORM; it goes through `VAULT.*` and catches `VaultError`.
 
 ## Working style

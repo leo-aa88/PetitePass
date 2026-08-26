@@ -18,7 +18,7 @@ This document describes how PetitePass is built and what it defends against. It 
 
 1. **Local and offline.** No network code exists. The trust boundary is the user's account and disk.
 2. **One source of truth.** The encrypted vault file is authoritative. Nothing else (no sidecar hash, no config) can grant or deny access.
-3. **Fail safe.** Any operation that rewrites the vault must be atomic: it either fully succeeds or leaves the previous vault openable.
+3. **Fail safe.** Any operation that rewrites the vault must be atomic, committing at a single `os.replace`: a failure *before* the commit leaves the previous vault openable; a failure *after* it is reported distinctly (the new vault is now in place). Never a torn or ambiguous state. See §5.
 4. **Small and auditable.** A handful of runtime dependencies; the GUI is a thin shell over a single service.
 
 ## 2. Architecture
@@ -143,8 +143,8 @@ A change that violates any of these is a security regression, regardless of whet
 1. Authentication succeeds **only** if the vault decrypts and the `password` table is present.
 2. The master password reaches SQLCipher **only** through peewee's escaping API — never application-built `PRAGMA` strings.
 3. An empty or NUL master password is refused before any file is created or replaced.
-4. Every vault-replacing operation is atomic (verified copy → `os.replace`) and leaves the previous vault openable on failure.
-5. Post-commit failures are reported as distinct errors (`VaultRotatedError` / `VaultRestoredError`), never as "wrong password".
+4. Every vault-replacing operation (rekey, restore, migration) is atomic: it works on a verified copy and commits with a single `os.replace`. The `fsync` of the copy is fatal (never swallowed). **Before** the commit, any failure leaves the previous vault openable under the current master and restores the session. **After** the commit, the vault is the new one — see invariant 5.
+5. A failure to reopen the session **after** the `os.replace` commit is reported as a distinct error (`VaultRotatedError` for rekey, `VaultRestoredError` for restore), never as an auth/"wrong password" error. The rotation/restore has committed: the old master no longer opens the vault, and the user must unlock with the new/backup master. (Only `paths._migrate`, whose post-commit steps are pure cleanup, never flips its result after the commit.)
 6. The GUI never accesses the ORM directly; all credential access goes through the `Vault`.
 7. The credential list never loads password ciphertext to render the table.
 8. New security-relevant behavior ships with tests against **real** SQLCipher.

@@ -24,10 +24,12 @@ merge. For writing a feature use `implement-feature`; for fixing a defect use
    - Master password reaches SQLCipher only via peewee's escaping API — no
      `f"PRAGMA key = '{...}'"`.
    - Empty / NUL master rejected before any file is created or replaced.
-   - Vault replacement is atomic: verified copy → fatal `fsync` → `os.replace` →
-     best-effort post-commit; a failure leaves the previous vault openable.
-   - Post-commit failures raise `VaultRotatedError` / `VaultRestoredError`, not an
-     auth error.
+   - Vault replacement is atomic: verified copy → fatal `fsync` → `os.replace`.
+     *Before* the commit a failure leaves the previous vault openable; *after* it
+     the new vault is in place.
+   - A reopen failure *after* the commit raises `VaultRotatedError` /
+     `VaultRestoredError` (not an auth error, not "unchanged"). The old master no
+     longer opens the vault.
    - GUI never touches the ORM; the service translates `DatabaseError` into
      `VaultError`; GUI catches `VaultError`.
    - The credential list does not load password ciphertext.

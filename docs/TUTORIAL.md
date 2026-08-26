@@ -59,7 +59,7 @@ Click **Save**. The row appears with the password masked (`•••••••
 
 ## 5. Edit and delete
 
-- **Edit:** double-click a row (or right-click → **Update password**). The name is fixed; change the username and/or password. Leaving a field blank keeps the current value.
+- **Edit:** double-click a row to edit that entry — its name is locked, and you change the username and/or password. (Right-click → **Update password** opens the same dialog with an editable name field, where the name you type is used to look up the entry.) Leaving a field blank keeps the current value.
 - **Delete:** right-click → **Delete password**. You will be asked to confirm — deletion is permanent.
 
 ## 6. Generate a strong password
@@ -72,7 +72,7 @@ You can also right-click → **Check password strength** to see a zxcvbn estimat
 
 Right-click → **Modify master password**. Enter your current password and a new one (twice). The new password must satisfy the same policy as at creation.
 
-Under the hood this rekeys the entire database atomically on a verified copy — if anything fails, your old password still works. On success the change is immediate.
+Under the hood this rekeys the entire database on a verified copy and swaps it in with a single atomic step. If it fails *before* that swap, your old password still works and nothing changed. If it fails *after* the swap (rare — the new key is already on disk), PetitePass tells you the change committed and to restart and log in with your **new** password; it will not tell you the old one was wrong.
 
 ## 8. Back up and restore
 
@@ -88,8 +88,8 @@ After a period of inactivity, PetitePass closes the vault, clears the clipboard,
 
 | Symptom                                              | Cause / fix                                                                                     |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| "Incorrect master password, or not a valid vault"    | Wrong password, or the file is not a PetitePass vault. Master passwords cannot be recovered.    |
+| Login says "Incorrect password."                     | Wrong master password (it cannot be recovered), or the vault file is missing/damaged.           |
 | Login screen appears again unexpectedly              | The vault auto-locked after inactivity. This is normal; log back in.                            |
-| "The backup destination must differ from the vault"  | You chose the live vault file as a backup target. Pick a different path.                        |
+| "The backup destination must differ from the live vault file" | You chose the live vault file as a backup target. Pick a different path.                |
 | "Restart PetitePass and unlock with the … password"  | A rekey or restore committed on disk but the session could not reopen. Restart and use the new master password. |
 | Moved to a new machine                               | Copy the vault file to the same data directory (see the README), or use **Restore from backup**. |

@@ -146,7 +146,7 @@ A step-by-step walkthrough is in [docs/TUTORIAL.md](docs/TUTORIAL.md).
   └───────────────┘ ◀───────── Credential summaries (no password) └──────────────┘
 ```
 
-Every credential operation goes through the `Vault` service; the GUI never touches the ORM. Vault-mutating operations (rekey, restore) run on a verified temporary copy and commit with an atomic `os.replace`, so a crash or error leaves the previous vault intact. See [docs/DESIGN.md](docs/DESIGN.md) for the full architecture and the commit/durability discipline.
+Every credential operation goes through the `Vault` service; the GUI never touches the ORM. Vault-mutating operations (rekey, restore) run on a verified temporary copy and commit with a single atomic `os.replace`: a failure *before* the commit leaves the previous vault openable, and a failure *after* it is reported distinctly (the new vault is already in place — you unlock with the new master). See [docs/DESIGN.md §5](docs/DESIGN.md#5-vault-file-operations-and-durability) for the full commit/durability discipline.
 
 * * *
 

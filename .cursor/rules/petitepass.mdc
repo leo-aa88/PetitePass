@@ -22,11 +22,17 @@ threat model / invariants in [docs/DESIGN.md](../../docs/DESIGN.md).
   `execute_sql(f"PRAGMA key = '{master}'")`.
 - **Reject empty/NUL master** before creating or replacing any file.
 - **Atomic vault replacement.** Rekey / restore / migration work on a *verified
-  copy* and commit with `os.replace`. `fsync` of the copy is fatal (never
-  swallowed); post-commit steps are best-effort and never flip the result to
-  failure. A failure leaves the previous vault openable.
-- **Distinct post-commit errors:** `VaultRotatedError` / `VaultRestoredError`,
-  never an auth error, once `os.replace` has committed.
+  copy* and commit at a single `os.replace`; `fsync` of the copy is fatal.
+  *Before* the commit a failure leaves the previous vault openable under the
+  current master. *After* the commit the vault is the new one (only
+  `paths._migrate`, whose post-commit work is pure cleanup, never flips).
+- **Distinct post-commit errors.** A reopen failure *after* `os.replace` is
+  `VaultRotatedError` / `VaultRestoredError`, never an auth error. The change
+  committed; the old master no longer opens the vault. Don't swallow it or call
+  it "unchanged".
+- **The `except Exception` in `Vault.create` / `rekey` / `restore_from` is
+  deliberate** — it stops a NUL/`ValueError` from leaving a half-written file;
+  do not narrow it. GUI slots catch `VaultError` only.
 - **GUI never touches the ORM.** All credential access goes through `VAULT.*`;
   the service translates peewee `DatabaseError` into `VaultError`; GUI slots
   catch `VaultError`.

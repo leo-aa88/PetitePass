@@ -33,8 +33,8 @@ These are also listed in [docs/DESIGN.md §9](docs/DESIGN.md#9-invariants-do-not
 1. **Authentication = decryption.** A session is valid only if the vault decrypts *and* the `password` table is present. Never reintroduce a sidecar verifier.
 2. **No hand-built PRAGMA.** The master password reaches SQLCipher only through peewee's escaping `passphrase=` / `rekey()` API. Never `execute_sql(f"PRAGMA key = '{...}'")`.
 3. **Reject empty/NUL master** before creating or replacing any file (an empty passphrase yields a plaintext database).
-4. **Atomic vault replacement.** Rekey/restore/migration work on a verified copy and commit with `os.replace`; a failure leaves the previous vault openable. `fsync` of the copy is fatal (never swallowed); post-commit steps are best-effort and never flip the result.
-5. **Distinct post-commit errors.** After the commit point, report `VaultRotatedError` / `VaultRestoredError` — never an auth error.
+4. **Atomic vault replacement.** Rekey/restore/migration work on a verified copy and commit at a single `os.replace`. The `fsync` of the copy is fatal (never swallowed). *Before* the commit, a failure leaves the previous vault openable under the current master. *After* the commit, the vault is the new one — see #5. (Only `paths._migrate`, whose post-commit work is pure cleanup, never flips its result.)
+5. **Distinct post-commit errors.** A reopen failure *after* the `os.replace` commit is `VaultRotatedError` (rekey) / `VaultRestoredError` (restore) — never an auth error. The change committed; the old master no longer opens the vault. This is a real failure of the operation; do not report it as "unchanged" or swallow it.
 6. **GUI never touches the ORM.** All credential access goes through `VAULT.*`. The GUI catches `VaultError` (and subclasses) only; the service translates every peewee `DatabaseError` into `VaultError`.
 7. **Don't load ciphertext to draw the list.** `list_credentials()` selects non-password columns only.
 
@@ -44,7 +44,7 @@ These are also listed in [docs/DESIGN.md §9](docs/DESIGN.md#9-invariants-do-not
 - **Types:** mypy is clean on `src/petitepass/core`. Keep it that way. The GUI is intentionally not type-checked (PyQt5 ships no stubs).
 - **Dependencies:** the runtime set is deliberately tiny (`requirements.txt`). Do not add a runtime dependency without a strong reason; `pip-audit` gates CI. `pip freeze` is not dependency management.
 - **GUI module names** are camelCase by pre-existing convention (`authDialog.py`); leave them.
-- **Broad `except Exception`** in GUI slots is a deliberate error boundary (show a dialog, don't crash). It is not allowed in the `Vault` service, which raises typed errors.
+- **Broad `except Exception` lives in the `Vault`, on purpose.** `create` / `rekey` / `restore_from` catch `Exception` to translate an *unexpected* failure into a `VaultError` — most importantly so a non-`DatabaseError` (e.g. a NUL master raising `ValueError`) cannot leave a half-written file that `exists()` would treat as a vault. Do not narrow those handlers back to `DatabaseError`. GUI slots, by contrast, catch `VaultError` (and subclasses) only — the service is the boundary.
 - **Commits:** imperative subject; explain *why* in the body. End with the `Co-Authored-By` trailer if an agent made the change. Never commit secrets, real vault files, or built binaries.
 
 ## Testing expectations
