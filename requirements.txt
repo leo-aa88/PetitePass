@@ -28,7 +28,7 @@ numba==0.67.0
 numpy==1.26.2
 packaging==23.2
 peewee==3.17.0
-pip-upgrader==1.4.15
+pip-upgrader==2.4.13
 platformdirs==4.11.3
 pooch==1.9.0
 pycodestyle==2.14.0
