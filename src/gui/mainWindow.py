@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from core.vault import VAULT, VaultAuthError, VaultError
+from core.vault import VAULT, VaultAuthError, VaultError, VaultRestoredError
 from gui.checkPasswordDialog import CheckPasswordDialog
 from gui.deletePasswordDialog import DeletePasswordDialog
 from gui.generatePasswordDialog import GeneratePasswordDialog
@@ -82,10 +82,28 @@ class MainWindow(QWidget):
         return super().eventFilter(obj, event)
 
     def _on_inactivity(self):
-        # Detach the app-wide filter so the discarded window stops observing,
-        # clear any copied secret, and hand control back for re-authentication.
+        # Never tear the window down while a modal dialog (copy/backup/restore/
+        # update/file dialog) is on the stack -- that would destroy the dialog's
+        # parent under its nested event loop. Defer the lock until it closes.
+        if QApplication.activeModalWidget() is not None:
+            self.inactivityTimer.start(_AUTOLOCK_MS)
+            return
+        self._lock()
+
+    def _lock(self):
+        # Actually lock: stop timers, detach the app-wide filter, clear the
+        # clipboard, re-mask any revealed passwords, CLOSE the vault, and hand
+        # control back for re-authentication.
+        self.inactivityTimer.stop()
+        self.timer.stop()
         QApplication.instance().removeEventFilter(self)
         self.clear_clipboard()
+        for row in range(self.table.rowCount()):
+            self._set_readonly(row, _COL_PW, _MASK)
+            button = self.table.cellWidget(row, _COL_SHOW)
+            if button is not None:
+                button.setText("Show")
+        VAULT.close()
         self.locked.emit()
 
     # -- dialogs -----------------------------------------------------------
@@ -157,6 +175,12 @@ class MainWindow(QWidget):
             return
         try:
             VAULT.restore_from(path, master)
+        except VaultRestoredError as exc:
+            # Committed on disk but the session could not be rebound: do NOT
+            # blame the password. Tell the user and restart.
+            QMessageBox.critical(self, "Restart required", str(exc))
+            QApplication.quit()
+            return
         except VaultAuthError:
             QMessageBox.warning(
                 self, "Restore failed",

@@ -139,12 +139,6 @@ win.restoreVault()
 check("restore reverts vault to backup contents",
       {c.name for c in VAULT.list_credentials()} == {"github"})
 
-# 6f. Auto-lock emits the locked signal.
-_locked = {"v": False}
-win.locked.connect(lambda: _locked.__setitem__("v", True))
-win._on_inactivity()
-check("auto-lock emits locked signal", _locked["v"])
-
 # 7. Rekey through the real dialog slot, then reopen with the new master.
 mm = ModifyMasterPasswordDialog(win)
 mm.currentPasswordField.setText(MASTER)
@@ -167,7 +161,13 @@ dd.nameField.setText("github")
 dd.deletePassword()
 check("delete removes record", Password.select().count() == 0)
 
-VAULT.close()
+# 9. Auto-lock must emit `locked` AND actually close the vault (no modal open).
+_locked = {"v": False}
+win.locked.connect(lambda: _locked.__setitem__("v", True))
+win._on_inactivity()
+check("auto-lock emits locked signal", _locked["v"])
+check("auto-lock actually closes the vault", not VAULT.is_open)
+
 failed = [label for label, ok in checks if not ok]
 print(f"\n{len(checks) - len(failed)}/{len(checks)} checks passed")
 sys.exit(1 if failed else 0)

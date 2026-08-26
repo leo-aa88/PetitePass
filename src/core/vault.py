@@ -64,6 +64,16 @@ class VaultRotatedError(VaultError):
     """
 
 
+class VaultRestoredError(VaultError):
+    """Restore committed on disk, but the session could not be rebound.
+
+    The on-disk vault is now the restored backup; the session is unusable and
+    the application must be restarted and unlocked with the backup's master
+    password. Distinct from VaultAuthError so callers never report a committed
+    restore as "the current password is wrong".
+    """
+
+
 class VaultLockedError(VaultError):
     """A credential operation was attempted while the vault was closed."""
 
@@ -86,8 +96,20 @@ _TABLE = Password._meta.table_name
 # password table), which SQLCipher would otherwise initialize under ANY key.
 _SENTINEL = f"SELECT 1 FROM {_TABLE} LIMIT 1"
 
-# Suffix for the transient rekey working copy (see module docstring).
+# Suffixes for the transient working copies of the vault file (rekey / restore).
+# open() deletes any leftover of these next to the vault (pre-commit garbage).
 _REKEY_TMP_SUFFIX = ".rekey.tmp"
+_RESTORE_TMP_SUFFIX = ".restore.tmp"
+
+
+def _same_file(a, b) -> bool:
+    """Whether two paths resolve to the same file (symlinks/normalization)."""
+    try:
+        if os.path.exists(a) and os.path.exists(b):
+            return os.path.samefile(a, b)
+    except OSError:
+        pass
+    return os.path.realpath(str(a)) == os.path.realpath(str(b))
 
 # SQLCipher cipher parameters, pinned explicitly rather than inherited from
 # whatever the linked sqlcipher3 build happens to default to. These are the
@@ -183,9 +205,11 @@ class Vault:
         if not self.exists():
             raise VaultMissingError("No vault file exists.")
 
-        # A leftover working copy can only be pre-replace garbage (the real vault
-        # is authoritative and intact); remove it so it cannot accumulate.
+        # A leftover working copy (rekey or restore) can only be pre-replace
+        # garbage -- the real vault is authoritative and intact -- so remove any
+        # so they cannot accumulate.
         self._unlink_quiet(self._path + _REKEY_TMP_SUFFIX)
+        self._unlink_quiet(self._path + _RESTORE_TMP_SUFFIX)
 
         db = self._connect_verified(self._path, master)  # raises VaultAuthError
         Password._meta.database = db
@@ -371,23 +395,34 @@ class Vault:
     # -- backup / restore --------------------------------------------------
 
     def backup_to(self, dest) -> None:
-        """Write an encrypted backup of the current vault to ``dest``.
+        """Write a verified encrypted backup of the current vault to ``dest``.
 
-        The backup is a byte copy of the (already encrypted) vault, so it is
-        protected by the same master password. Written atomically (temp + fsync
-        + replace) with 0600 permissions.
+        Written atomically (temp + fsync + replace) with 0600 permissions, and
+        the copy is opened under the current master before it is committed to
+        ``dest`` -- so "backup saved" means the file is a decryptable vault, not
+        just bytes that were copied. Refuses a destination that is the live vault
+        (which would replace the open file's inode and break the session).
         """
         self._require_open()
         dest = str(dest)
+        if _same_file(dest, self._path):
+            raise VaultError(
+                "The backup destination must differ from the live vault file.")
         tmp = dest + ".tmp"
         self._unlink_quiet(tmp)
         try:
             shutil.copy2(self._path, tmp)
             secure_existing_file(tmp)
             fsync_file(tmp)
+            # Prove the copy is a valid vault under the current master before it
+            # is presented to the user as a backup.
+            self._safe_close(self._connect_verified(tmp, self._master))
             os.replace(tmp, dest)
             fsync_dir(os.path.dirname(dest) or ".")
             secure_existing_file(dest)
+        except VaultError:
+            self._unlink_quiet(tmp)
+            raise
         except OSError as exc:
             self._unlink_quiet(tmp)
             raise VaultError(f"Backup failed: {exc}") from exc
@@ -395,14 +430,19 @@ class Vault:
     def restore_from(self, src, master: str) -> None:
         """Replace the current vault with the backup at ``src``.
 
-        ``src`` must be a valid vault that decrypts under ``master``; this is
-        verified before anything is touched. The swap uses the same commit
-        discipline as rekey -- the live vault is replaced only via an atomic
-        os.replace of a verified copy -- so any failure leaves the current vault
-        intact and the session usable. On success the session is reopened under
-        the backup's master password.
+        ``src`` must be a valid vault that decrypts under ``master``, verified
+        before anything is touched. Up to the ``os.replace`` commit, any failure
+        leaves the current vault intact and the session usable (``VaultError``).
+        After the commit the on-disk vault IS the backup, so a failure to reopen
+        raises ``VaultRestoredError`` (not an auth error): the swap happened and
+        the session must be re-established with the backup's master.
         """
         self._require_open()
+        # Same invariant as create/open/rekey: an empty master applies no key,
+        # so a plaintext SQLite file with a `password` table would otherwise be
+        # accepted and installed in place of the encrypted vault. A NUL would
+        # escape _connect_verified as ValueError; reject it here too.
+        self._require_nonempty(master)
         src = str(src)
         if not os.path.exists(src):
             raise VaultError("Backup file does not exist.")
@@ -410,7 +450,7 @@ class Vault:
         self._safe_close(self._connect_verified(src, master))
 
         current_master = self._master
-        tmp = self._path + ".restore.tmp"
+        tmp = self._path + _RESTORE_TMP_SUFFIX
         self._unlink_quiet(tmp)
 
         # Release the live file so the copy/replace is clean.
@@ -435,10 +475,20 @@ class Vault:
                 "Restore could not be committed; the vault was left unchanged."
             ) from exc
 
+        # Committed: the on-disk vault is now the backup, keyed with `master`.
         fsync_dir(os.path.dirname(self._path) or ".")
         secure_existing_file(self._path)
         self._master = master
-        self._reopen(master)
+        try:
+            self._reopen(master)
+        except VaultAuthError as exc:
+            self._db = None
+            Password._meta.database = None
+            raise VaultRestoredError(
+                "The vault was restored from the backup, but the session could "
+                "not be reopened. Restart PetitePass and unlock with the "
+                "backup's master password."
+            ) from exc
 
     # -- helpers -----------------------------------------------------------
 
