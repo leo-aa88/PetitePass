@@ -1,164 +1,182 @@
-import pyperclip
-import subprocess
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QAction, qApp, QMessageBox,
-                             QPushButton, QVBoxLayout, QWidget, QLabel, QLineEdit, QTableWidget,
-                             QTableWidgetItem, QDialog, QFormLayout, QComboBox, QStyleFactory, QMenu)
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QThread
-from gui.passwordDialog import PasswordDialog
-from gui.generatePasswordDialog import GeneratePasswordDialog
-from gui.checkPasswordDialog import CheckPasswordDialog
-from gui.updatePasswordDialog import UpdatePasswordDialog
-from gui.deletePasswordDialog import DeletePasswordDialog
-from gui.modifyMasterPasswordDialog import ModifyMasterPasswordDialog
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import (
+    QApplication,
+    QHeaderView,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
 from core.database import Password
+from gui.checkPasswordDialog import CheckPasswordDialog
+from gui.deletePasswordDialog import DeletePasswordDialog
+from gui.generatePasswordDialog import GeneratePasswordDialog
+from gui.modifyMasterPasswordDialog import ModifyMasterPasswordDialog
+from gui.passwordDialog import PasswordDialog
+from gui.updatePasswordDialog import UpdatePasswordDialog
+
+# Fixed-width mask so the displayed placeholder does not leak the exact
+# password length to anyone glancing at the screen.
+_MASK = "•" * 8
+# Clear the clipboard this many milliseconds after a copy.
+_CLIPBOARD_CLEAR_MS = 15000
+
 
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
+        self._copied_secret = None
         self.initUI()
-        self.copied_password = None
 
     def initUI(self):
         layout = QVBoxLayout(self)
 
-        # Set up the QTimer
         self.timer = QTimer(self)
-        self.timer.setSingleShot(True)  # The timer will only run once per start
+        self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.clear_clipboard)
 
-        # Password Table
         self.table = QTableWidget(self)
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["Name", "Username", "Password", "Created", "Updated"])
         layout.addWidget(self.table)
-
-        # Align the horizontal headers
-        for i in range(self.table.columnCount()):
-            headerItem = QTableWidgetItem(self.table.horizontalHeaderItem(i).text())
-            headerItem.setTextAlignment(Qt.AlignHCenter)
-            self.table.setHorizontalHeaderItem(i, headerItem)
-
         self.populatePasswordTable()
 
+    # -- dialogs -----------------------------------------------------------
+
     def checkPasswordStrength(self):
-        checkPasswordDialog = CheckPasswordDialog(self)
-        checkPasswordDialog.exec_()  # This will display the dialog
+        CheckPasswordDialog(self).exec_()
 
     def addPassword(self):
-        dialog = PasswordDialog(self)
-        if dialog.exec_() == QDialog.Accepted:
+        if PasswordDialog(self).exec_() == PasswordDialog.Accepted:
             self.populatePasswordTable()
 
     def updatePassword(self):
-        dialog = UpdatePasswordDialog(self)
-        if dialog.exec_() == QDialog.Accepted:
+        if UpdatePasswordDialog(self).exec_() == UpdatePasswordDialog.Accepted:
             self.populatePasswordTable()
 
     def deletePassword(self):
-        dialog = DeletePasswordDialog(self)
-        if dialog.exec_() == QDialog.Accepted:
-            self.populatePasswordTable()                        
+        if DeletePasswordDialog(self).exec_() == DeletePasswordDialog.Accepted:
+            self.populatePasswordTable()
 
     def generatePassword(self):
-        dialog = GeneratePasswordDialog(self)
-        dialog.exec_()
+        GeneratePasswordDialog(self).exec_()
 
     def modifyMasterPassword(self):
-        dialog = ModifyMasterPasswordDialog(self)
-        dialog.exec_()
+        ModifyMasterPasswordDialog(self).exec_()
+
+    # -- table -------------------------------------------------------------
 
     def populatePasswordTable(self):
-        # Clear existing data
         self.table.clearContents()
         self.table.setRowCount(0)
         self.table.setColumnCount(7)
-        self.table.setHorizontalHeaderLabels(["Name", "Username", "Password", "Created", "Updated", "Visibility", "Copy"])
+        self.table.setHorizontalHeaderLabels(
+            ["Name", "Username", "Password", "Created", "Updated",
+             "Visibility", "Copy"])
+        self.table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeToContents)
 
-        # Fetch data from the database
-        passwords = Password.select()  # assuming this fetches data from your database
-        for row, password in enumerate(passwords):
+        try:
+            # Select only the columns needed to draw the (masked) list; the
+            # password column is fetched on demand in _lookup, so plaintext is
+            # never loaded merely to render the table.
+            rows = list(Password.select(
+                Password.name, Password.username,
+                Password.timestamp, Password.updated))
+        except Exception as exc:
+            QMessageBox.critical(
+                self, "Vault error",
+                f"Could not read the vault: {exc}")
+            return
+
+        for row, entry in enumerate(rows):
             self.table.insertRow(row)
+            self._set_readonly(row, 0, entry.name)
+            self._set_readonly(row, 1, entry.username or "")
+            self._set_readonly(row, 2, _MASK)
+            self._set_readonly(row, 3, str(entry.timestamp))
+            self._set_readonly(row, 4, str(entry.updated))
+            self.addPasswordButton(row, entry.name)
+            self.addCopyButton(row, entry.name)
 
-            nameItem = QTableWidgetItem(password.name)
-            nameItem.setFlags(nameItem.flags() ^ Qt.ItemIsEditable)
-            self.table.setItem(row, 0, nameItem)
-            
-            usernameItem = QTableWidgetItem(password.username)
-            usernameItem.setFlags(usernameItem.flags() ^ Qt.ItemIsEditable)
-            self.table.setItem(row, 1, usernameItem)
+    def _set_readonly(self, row, col, text):
+        item = QTableWidgetItem(text)
+        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+        self.table.setItem(row, col, item)
 
-            passwordItem = QTableWidgetItem('*' * len(password.password))
-            passwordItem.setFlags(passwordItem.flags() ^ Qt.ItemIsEditable)
-            self.table.setItem(row, 2, passwordItem)
+    @staticmethod
+    def _lookup(name):
+        """Fetch a single credential on demand instead of holding them all."""
+        return Password.get(Password.name == name)
 
-            timestampItem = QTableWidgetItem(str(password.timestamp))
-            timestampItem.setFlags(timestampItem.flags() ^ Qt.ItemIsEditable)
-            self.table.setItem(row, 3, timestampItem)
+    # -- clipboard ---------------------------------------------------------
 
-            updatedItem = QTableWidgetItem(str(password.updated))
-            updatedItem.setFlags(updatedItem.flags() ^ Qt.ItemIsEditable)
-            self.table.setItem(row, 4, updatedItem)
+    def addCopyButton(self, row, name):
+        button = QPushButton("Copy", self)
+        button.clicked.connect(lambda _=False, n=name: self.copyToClipboard(n))
+        self.table.setCellWidget(row, 6, button)
 
-            self.addPasswordButton(row, password)
-            self.addCopyButton(row, password.password)
-
-    def addCopyButton(self, row, password):
-        copyButton = QPushButton('Copy', self)
-        copyButton.clicked.connect(lambda: self.copyToClipboard(password))
-        self.table.setCellWidget(row, 6, copyButton)  # Adjust the index for your table
-
-    def copyToClipboard(self, password):
-        QApplication.clipboard().setText(password)
-        self.copied_password = password
-        QMessageBox.information(self, "Copied", "Password copied to clipboard!")
-        self.timer.start(3000)
+    def copyToClipboard(self, name):
+        try:
+            secret = self._lookup(name).password
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", str(exc))
+            return
+        QApplication.clipboard().setText(secret)
+        self._copied_secret = secret
+        self.timer.start(_CLIPBOARD_CLEAR_MS)
+        QMessageBox.information(
+            self, "Copied",
+            "Password copied to clipboard. It will be cleared in "
+            f"{_CLIPBOARD_CLEAR_MS // 1000} seconds.")
 
     def clear_clipboard(self):
-        subprocess.run('xsel -bc', shell=True, check=True)
+        # Only clear if the clipboard still holds the secret we placed there,
+        # so we never wipe something the user copied afterwards. Uses Qt (no
+        # external process/shell), so it works on X11, Wayland, macOS, Windows.
+        clipboard = QApplication.clipboard()
+        if self._copied_secret is not None \
+                and clipboard.text() == self._copied_secret:
+            clipboard.clear()
+        self._copied_secret = None
 
-    def addPasswordButton(self, row, password):
-        button = QPushButton('Show', self)
-        button.clicked.connect(lambda: self.togglePasswordVisibility(row, password))
-        self.table.setCellWidget(row, 5, button)  # Add button to the 6th column
+    # -- show/hide ---------------------------------------------------------
 
-    def togglePasswordVisibility(self, row, password):
-        # Logic to toggle password visibility
+    def addPasswordButton(self, row, name):
+        button = QPushButton("Show", self)
+        button.clicked.connect(
+            lambda _=False, r=row, n=name: self.togglePasswordVisibility(r, n))
+        self.table.setCellWidget(row, 5, button)
+
+    def togglePasswordVisibility(self, row, name):
         button = self.table.cellWidget(row, 5)
-        if button.text() == 'Show':
-            button.setText('Hide')
-            passwordItem = QTableWidgetItem(password.password)
-            passwordItem.setFlags(passwordItem.flags() ^ Qt.ItemIsEditable)
-            self.table.setItem(row, 2, passwordItem)
+        if button.text() == "Show":
+            try:
+                secret = self._lookup(name).password
+            except Exception as exc:
+                QMessageBox.critical(self, "Error", str(exc))
+                return
+            button.setText("Hide")
+            self._set_readonly(row, 2, secret)
         else:
-            button.setText('Show')
-            passwordItem = QTableWidgetItem('*' * len(password.password))
-            passwordItem.setFlags(passwordItem.flags() ^ Qt.ItemIsEditable)
-            self.table.setItem(row, 2, passwordItem)
+            button.setText("Show")
+            self._set_readonly(row, 2, _MASK)
+
+    # -- context menu ------------------------------------------------------
 
     def contextMenuEvent(self, event):
-        contextMenu = QMenu(self)
-
-        # Create actions
-        addAct = contextMenu.addAction("Add password")
-        updateAct = contextMenu.addAction("Update password")
-        deleteAct = contextMenu.addAction("Delete password")
-        generateAct = contextMenu.addAction("Generate password")
-        checkAct = contextMenu.addAction("Check password strength")
-        modifyMasterAct = contextMenu.addAction("Modify master password")
-
-        # Execute the context menu and get the selected action
-        action = contextMenu.exec_(self.mapToGlobal(event.pos()))
-
-        # Check which action was selected and call the respective method
-        if action == addAct:
-            self.addPassword()
-        elif action == updateAct:
-            self.updatePassword()
-        elif action == deleteAct:
-            self.deletePassword()
-        elif action == generateAct:
-            self.generatePassword()
-        elif action == checkAct:
-            self.checkPasswordStrength()
-        elif action == modifyMasterAct:
-            self.modifyMasterPassword()
+        menu = QMenu(self)
+        actions = {
+            menu.addAction("Add password"): self.addPassword,
+            menu.addAction("Update password"): self.updatePassword,
+            menu.addAction("Delete password"): self.deletePassword,
+            menu.addAction("Generate password"): self.generatePassword,
+            menu.addAction("Check password strength"): self.checkPasswordStrength,
+            menu.addAction("Modify master password"): self.modifyMasterPassword,
+        }
+        chosen = menu.exec_(self.mapToGlobal(event.pos()))
+        handler = actions.get(chosen)
+        if handler is not None:
+            handler()

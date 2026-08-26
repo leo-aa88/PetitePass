@@ -1,28 +1,25 @@
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QAction, qApp, QMessageBox,
-                             QPushButton, QVBoxLayout, QWidget, QLabel, QLineEdit, QTableWidget,
-                             QTableWidgetItem, QDialog, QFormLayout, QComboBox, QStyleFactory)
+from peewee import IntegrityError
+from PyQt5.QtWidgets import QDialog, QFormLayout, QLabel, QLineEdit, QMessageBox, QPushButton
+
 from core.database import Password
-from peewee import DoesNotExist
+
 
 class PasswordDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.initUI()
-        self.setWindowTitle("Create new password entry")        
+        self.setWindowTitle("Create new password entry")
 
     def initUI(self):
         layout = QFormLayout(self)
-
-        # Form fields
         self.nameField = QLineEdit(self)
         self.usernameField = QLineEdit(self)
         self.passwordField = QLineEdit(self)
+        self.passwordField.setEchoMode(QLineEdit.Password)
         layout.addRow(QLabel("Name:"), self.nameField)
         layout.addRow(QLabel("Username:"), self.usernameField)
         layout.addRow(QLabel("Password:"), self.passwordField)
-
-        # Buttons
-        self.buttons = QPushButton('Save', self)
+        self.buttons = QPushButton("Save", self)
         self.buttons.clicked.connect(self.savePassword)
         layout.addWidget(self.buttons)
 
@@ -30,15 +27,34 @@ class PasswordDialog(QDialog):
         name = self.nameField.text()
         username = self.usernameField.text()
         password = self.passwordField.text()
-        # Call your create_password function here
+
+        if not name:
+            QMessageBox.warning(self, "Error", "The name cannot be empty.")
+            return
+        if not password:
+            QMessageBox.warning(self, "Error", "The password cannot be empty.")
+            return
+
         try:
-            existing_entry = Password.get(Password.name == name)
-            if existing_entry is not None:
-                QMessageBox.warning(self, "Error", "The name already exists! Please type another name for the password.")
-        except DoesNotExist:
-                Password.create(name=name, username=username, password=password)
-                QMessageBox.information(self, "Success", "Password record created successfully!")
-                self.accept()   
-        except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
-            self.reject()
+            # Primary guard is the DB unique index (added on create and migrated
+            # in on open). The application-level pre-check is a fallback for
+            # legacy vaults whose index could not be built because they already
+            # contained duplicate names.
+            if Password.select().where(Password.name == name).exists():
+                QMessageBox.warning(
+                    self, "Error",
+                    "That name already exists. Please choose another name.")
+                return
+            Password.create(name=name, username=username, password=password)
+        except IntegrityError:
+            QMessageBox.warning(
+                self, "Error",
+                "That name already exists. Please choose another name.")
+            return
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", str(exc))
+            return
+
+        QMessageBox.information(
+            self, "Success", "Password record created successfully!")
+        self.accept()

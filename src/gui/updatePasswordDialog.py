@@ -1,9 +1,10 @@
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QAction, qApp, QMessageBox,
-                             QPushButton, QVBoxLayout, QWidget, QLabel, QLineEdit, QTableWidget,
-                             QTableWidgetItem, QDialog, QFormLayout, QComboBox, QStyleFactory)
-from core.database import Password
-from peewee import DoesNotExist
 from datetime import datetime
+
+from peewee import DoesNotExist
+from PyQt5.QtWidgets import QDialog, QFormLayout, QLabel, QLineEdit, QMessageBox, QPushButton
+
+from core.database import Password
+
 
 class UpdatePasswordDialog(QDialog):
     def __init__(self, parent=None):
@@ -13,17 +14,14 @@ class UpdatePasswordDialog(QDialog):
 
     def initUI(self):
         layout = QFormLayout(self)
-
-        # Form fields
         self.nameField = QLineEdit(self)
         self.usernameField = QLineEdit(self)
         self.passwordField = QLineEdit(self)
+        self.passwordField.setEchoMode(QLineEdit.Password)
         layout.addRow(QLabel("Name:"), self.nameField)
         layout.addRow(QLabel("Username:"), self.usernameField)
         layout.addRow(QLabel("Password:"), self.passwordField)
-
-        # Buttons
-        self.buttons = QPushButton('Update', self)
+        self.buttons = QPushButton("Update", self)
         self.buttons.clicked.connect(self.updatePassword)
         layout.addWidget(self.buttons)
 
@@ -33,20 +31,27 @@ class UpdatePasswordDialog(QDialog):
         password = self.passwordField.text()
 
         try:
-            existing_entry = Password.get(Password.name == name)
-            if existing_entry is None:
-                QMessageBox.warning(self, "Error", "The name does not exist! Please type an existing name for the password.")
-            else:
-                if username is not None and username != "":
-                    existing_entry.username = username
-                if password is not None and password != "":
-                    existing_entry.password = password
-                existing_entry.updated = datetime.now()
-                existing_entry.save()
-                QMessageBox.information(self, "Success", "Password record updated successfully!")
-                self.accept()  
+            entry = Password.get(Password.name == name)
         except DoesNotExist:
-                QMessageBox.warning(self, "Error", "The name does not exist! Please type an existing name for the password.")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
-            self.reject()
+            QMessageBox.warning(
+                self, "Error",
+                "The name does not exist! Please type an existing name.")
+            return
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", str(exc))
+            return
+
+        if username != "":
+            entry.username = username
+        if password != "":
+            entry.password = password
+        entry.updated = datetime.now()
+        try:
+            entry.save()
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", str(exc))
+            return
+
+        QMessageBox.information(
+            self, "Success", "Password record updated successfully!")
+        self.accept()

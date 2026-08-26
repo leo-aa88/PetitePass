@@ -15,8 +15,7 @@ A simple and secure lightweight password manager coded with Python using SQLCiph
 
 ## Requirements
 
-Python 3.10
-xsel
+Python 3.10+ (clipboard clearing is handled by Qt; no external `xsel` needed).
 
 ## Installing from source
 
@@ -25,7 +24,7 @@ To install and run the password manager on your system, follow these steps:
 1. **Clone the Repository:**
 
    ```bash
-   git clone https://github.com/araujo88/PetitePass.git
+   git clone https://github.com/leo-aa88/PetitePass.git
    cd PetitePass
    ```
 
@@ -53,7 +52,7 @@ To install and run the password manager on your system, follow these steps:
 
 At first run, the program will request a password creation for managing the password database. This password must satisfy certain requirements and be entered twice. THIS PASSWORD CANNOT BE RECOVERED WITHOUT RESETTING THE DATABASE.
 
-When the password is created, two files should have been created. One stores the password hash (5f4dcc3b5aa765d61d8327deb882cf99) and the other file (48cccca3bab2ad18832233ee8dff1b0b.db) stores the password encrypted database itself. IF THESE FILES ARE DELETED, ALL STORED DATA WILL BE LOST. The user can upload these files, along with the binary, in a cloud service, although this is highly discouraged. To achieve the most security, all data must be kept offline.
+When the password is created, an encrypted database file (`48cccca3bab2ad18832233ee8dff1b0b.db`) is created under `~/PetitePass/` with owner-only (`0600`) permissions. This single file is the entire vault: the master password is never stored anywhere, and authentication succeeds only if the master password actually decrypts this file. IF THIS FILE IS DELETED, ALL STORED DATA WILL BE LOST. To achieve the most security, keep the vault offline.
 
 Please note that while this password manager is designed to be secure, it's essential to keep your master password safe and to use the application responsibly.
 

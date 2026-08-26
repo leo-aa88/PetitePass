@@ -1,69 +1,55 @@
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QAction, qApp, QMessageBox,
-                             QPushButton, QVBoxLayout, QWidget, QLabel, QLineEdit, QTableWidget,
-                             QTableWidgetItem, QDialog, QFormLayout, QComboBox, QStyleFactory)
-from core.utils import *
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QDialog, QFormLayout, QLabel, QLineEdit, QMessageBox, QPushButton
+
+from core.strength import evaluate, is_common
+
+_SCORE_LABEL = {
+    0: "Very weak", 1: "Weak", 2: "Fair", 3: "Strong", 4: "Very strong",
+}
+
 
 class CheckPasswordDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.initUI()
-        # Disable resizing, which also disables maximizing
-        self.setFixedHeight(200)
-        self.setFixedWidth(400)
+        self.setFixedHeight(220)
+        self.setFixedWidth(420)
         self.setWindowTitle("Check password strength")
 
     def initUI(self):
-        self.passwordLengthLabel=QLabel("Password length:")
-        self.shannonEntropyLabel=QLabel("Shannon entropy:")
-        self.maxShannonEntropyLabel=QLabel("Maximum Shannon entropy:")
-        self.entropyRatioLabel=QLabel("Entropy ratio:")
+        self.scoreLabel = QLabel("Strength:")
+        self.crackTimeLabel = QLabel("Estimated crack time:")
+        self.feedbackLabel = QLabel("")
+        self.feedbackLabel.setWordWrap(True)
 
         layout = QFormLayout(self)
-
         self.passwordField = QLineEdit(self)
-        self.checkButton = QPushButton('Check Password', self)
+        self.checkButton = QPushButton("Check Password", self)
         self.checkButton.clicked.connect(self.checkPassword)
         layout.addRow(QLabel("Password:"), self.passwordField)
         layout.addWidget(self.checkButton)
         layout.addRow(QLabel())
-        layout.addRow(self.passwordLengthLabel)
-        layout.addRow(self.shannonEntropyLabel)
-        layout.addRow(self.maxShannonEntropyLabel)
-        layout.addRow(self.entropyRatioLabel)
-
+        layout.addRow(self.scoreLabel)
+        layout.addRow(self.crackTimeLabel)
+        layout.addRow(self.feedbackLabel)
 
     def checkPassword(self):
-        password_check = self.passwordField.text()
-        if password_check == "":
+        password = self.passwordField.text()
+        if password == "":
             QMessageBox.warning(self, "Error", "The password cannot be empty.")
             return
-        entropy_check = entropy(list(password_check), 10)
-        max_entropy = entropy_ideal(len(password_check), 10)
-        ratio = 100*entropy_check/max_entropy
-        
-        self.passwordLengthLabel.setText("Password length: " + str(len(password_check)))
-        self.shannonEntropyLabel.setText("Shannon entropy: " + str(entropy_check))
-        self.maxShannonEntropyLabel.setText("Maximum Shannon entropy: " + str(max_entropy))
-        self.entropyRatioLabel.setText("Entropy ratio: " + f"{round(ratio, 2)}%")
 
-        if (check_if_password_is_common(password_check, "/usr/share/10k-most-common.txt")):
-            QMessageBox.warning(self, "Warning", "The password is too common.")
-            return
-        elif len(password_check) < 8:
-            QMessageBox.warning(self, "Warning", "The length is under 8 characters. The password is weak.")
-            return
-        elif any(i in SPECIAL_CHARS for i in password_check) == False:
-            QMessageBox.warning(self, "Warning", "The password does not contain any special characters. The password is weak.")
-            return
-        elif any(i in ONLY_LOWERCASE for i in password_check) == False:
-            QMessageBox.warning(self, "Warning", "The password does not contain at least one lower-case character. The password is weak.")
-            return
-        elif any(i in ONLY_UPPERCASE for i in password_check) == False:
-            QMessageBox.warning(self, "Warning", "The password does not contain at least one upper-case character. The password is weak.")  
-            return      
-        elif round(ratio, 2) < 85:
-            QMessageBox.warning(self,"Warning", "The password has low entropy. The password is weak")
-        else:
-            QMessageBox.information(self, "Info", "The password is secure!")
+        result = evaluate(password)
+        self.scoreLabel.setText(
+            f"Strength: {_SCORE_LABEL.get(result.score, result.score)} "
+            f"({result.score}/4)")
+        self.crackTimeLabel.setText(
+            f"Estimated crack time (offline, slow hash): {result.crack_time}")
 
+        messages = []
+        if is_common(password):
+            messages.append("This password is in the list of most common passwords.")
+        if result.warning:
+            messages.append(result.warning)
+        messages.extend(result.suggestions)
+        self.feedbackLabel.setText("\n".join(messages) if messages
+                                   else "This is a strong password.")
