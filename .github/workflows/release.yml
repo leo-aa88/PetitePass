@@ -4,9 +4,16 @@
 # - On every pull request, the OS matrix is built as a DRY RUN (no tag, no
 #   publish) so a packaging break is caught before merge.
 # - A release is cut manually via workflow_dispatch (choose a semver bump), or
-#   by pushing a v*.*.* tag. The dispatch path bumps src/petitepass/__init__.py,
-#   commits, and tags — so the tag, the package metadata, and `petitepass
-#   --version` all agree.
+#   by pushing a v*.*.* tag.
+#
+#   Git tags are the source of truth for release versions. main is protected
+#   (changes must go through a PR), so a release never commits to it: the
+#   dispatch path computes the next version from the latest v*.*.* tag and
+#   pushes ONLY that tag. The binary is version-stamped from the tag at build
+#   time, so `petitepass --version` and the published artifacts match the tag.
+#   The committed src/petitepass/__init__.py version is only the floor used for
+#   source installs between releases; bump it in a normal PR when you want
+#   `pip install .` to report a newer number.
 #
 # PyInstaller cannot cross-compile, so each OS is built on its own native
 # runner. The bundled common-password list is added via --add-data (the src:dest
@@ -21,7 +28,7 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: "Semver bump over the current version in src/petitepass/__init__.py"
+        description: "Semver bump over the latest vX.Y.Z release tag"
         type: choice
         options:
           - patch
@@ -47,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: write   # commits the version bump and pushes the tag
+      contents: write   # pushes the release tag (never commits to main)
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
       version: ${{ steps.resolve.outputs.version }}
@@ -173,9 +180,16 @@ jobs:
           # This job only builds; it never pushes. Do not leave a token in git.
           persist-credentials: false
 
-      # The release is tag-only (no version commit lands on main), so stamp the
-      # resolved version into the working tree before building. On a PR dry run
-      # version is empty and the repo's declared __version__ is used as-is.
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Tags are the source of truth and no version commit lands on main, so
+      # stamp the resolved version into the working tree before freezing. Runs
+      # only on a real release (version is empty on the PR dry run). Fails closed:
+      # if the substitution does not land, the binary would freeze the wrong
+      # version while publish names the artifacts after the tag.
       - name: Stamp version
         if: ${{ needs.version.outputs.version != '' }}
         shell: bash
@@ -184,14 +198,11 @@ jobs:
           import re, sys
           path, version = sys.argv[1], sys.argv[2]
           text = open(path).read()
-          text = re.sub(r'__version__\s*=\s*"[^"]+"', f'__version__ = "{version}"', text)
-          open(path, "w").write(text)
+          new, n = re.subn(r'__version__\s*=\s*"[^"]+"', f'__version__ = "{version}"', text, count=1)
+          if n != 1:
+              sys.exit(f"failed to stamp __version__ in {path} (matched {n} times)")
+          open(path, "w").write(new)
           PY
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
 
       - name: Install dependencies
         run: |
@@ -223,9 +234,17 @@ jobs:
       - name: Verify binary (POSIX)
         if: ${{ matrix.os != 'windows' }}
         shell: bash
+        env:
+          EXPECT_VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          staging/petitepass --version
+          ver="$(staging/petitepass --version)"
+          echo "$ver"
+          # On a real release, the frozen binary MUST report the tag version.
+          if [ -n "$EXPECT_VERSION" ] && [ "$ver" != "petitepass ${EXPECT_VERSION}" ]; then
+            echo "version mismatch: expected 'petitepass ${EXPECT_VERSION}', got '$ver'" >&2
+            exit 1
+          fi
           out="$(staging/petitepass --selftest)"
           echo "$out"
           case "$out" in
