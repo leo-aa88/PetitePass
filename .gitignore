@@ -137,3 +137,4 @@ Tests
 
 *.deb
 petitepass
+.venv-test/

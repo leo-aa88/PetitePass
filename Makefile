@@ -1,19 +1,28 @@
+.PHONY: setup install-requirements install-dev test lint build install uninstall clean
+
 setup:
-	python3 -m venv .env && source env/bin/activate
+	python3 -m venv .venv
 
 install-requirements:
 	pip3 install -r requirements.txt
 
-build:
-	pyinstaller --onefile --paths=/env/Lib/site-packages src/main.py
-	mv dist/main dist/petitepass
-	cp dist/petitepass petitepass_package/bin/petitepass
+install-dev:
+	pip3 install -r requirements-dev.txt
 
-install:
-	mkdir /opt/PetitePass && cp dist/PetitePass /usr/bin/PetitePass
+test:
+	python3 -m pytest tests -q
+
+lint:
+	ruff check src tests
+
+build:
+	pyinstaller --onefile --name petitepass src/main.py
+
+install: build
+	install -Dm755 dist/petitepass /usr/bin/petitepass
 
 uninstall:
-	rm -rf /opt/PetitePass && rm -rf /usr/bin/PetitePass
+	rm -f /usr/bin/petitepass
 
 clean:
-	rm -rf build dist
+	rm -rf build dist *.spec __pycache__

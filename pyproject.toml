@@ -1,0 +1,14 @@
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# E/F: real errors and pyflakes. I: import ordering.
+# Broad `except Exception` in GUI slots is a deliberate error boundary (show a
+# dialog instead of crashing the app), and the camelCase GUI module names are a
+# pre-existing convention, so BLE001/N999 are not enabled.
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

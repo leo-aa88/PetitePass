@@ -6,5 +6,4 @@ Description: Simple and secure lightweight password manager
  PetitePass is a simple and secure lightweight password manager coded with Python using SQLCipher for SQLite database encryption and PyQt.
 Priority: optional
 Section: utils
-Depends: xsel
-Homepage: https://github.com/araujo88/PetitePass
+Homepage: https://github.com/leo-aa88/PetitePass
