@@ -1,0 +1,42 @@
+---
+description: PetitePass project rules — a password manager; security invariants are hard constraints.
+globs:
+  - "src/**"
+  - "tests/**"
+alwaysApply: true
+---
+
+# PetitePass rules
+
+This is a **password manager**. Hold every change to a higher standard than an
+ordinary app. The canonical guidance is [AGENTS.md](../../AGENTS.md) and the
+threat model / invariants in [docs/DESIGN.md](../../docs/DESIGN.md).
+
+## Hard constraints (do not regress)
+
+- **Authentication is decryption.** A session is valid only if the vault
+  decrypts *and* the `password` table is present. Never reintroduce a sidecar
+  verifier or a boolean "is authenticated" flag.
+- **No hand-built PRAGMA.** The master password reaches SQLCipher only through
+  peewee's escaping `passphrase=` / `rekey()` API. Never
+  `execute_sql(f"PRAGMA key = '{master}'")`.
+- **Reject empty/NUL master** before creating or replacing any file.
+- **Atomic vault replacement.** Rekey / restore / migration work on a *verified
+  copy* and commit with `os.replace`. `fsync` of the copy is fatal (never
+  swallowed); post-commit steps are best-effort and never flip the result to
+  failure. A failure leaves the previous vault openable.
+- **Distinct post-commit errors:** `VaultRotatedError` / `VaultRestoredError`,
+  never an auth error, once `os.replace` has committed.
+- **GUI never touches the ORM.** All credential access goes through `VAULT.*`;
+  the service translates peewee `DatabaseError` into `VaultError`; GUI slots
+  catch `VaultError`.
+- **Never load password ciphertext to render the list** (`list_credentials`
+  selects non-password columns).
+
+## Workflow
+
+- Verify against **real SQLCipher**; do not mock the database in security tests.
+- Run `make lint && make typecheck && make test` and the headless GUI smoke test
+  (`QT_QPA_PLATFORM=offscreen python tests/smoke_gui.py`) before proposing a change.
+- Keep the runtime dependency set minimal; `pip-audit` gates CI.
+- Keep docstrings/README truthful to the code.

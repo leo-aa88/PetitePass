@@ -1,0 +1,45 @@
+name: Feature request
+description: Suggest an idea or improvement for PetitePass
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. PetitePass aims to stay small, local, and
+        secure — proposals are weighed against that scope and the security
+        invariants in [docs/DESIGN.md](https://github.com/leo-aa88/PetitePass/blob/main/docs/DESIGN.md).
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What are you trying to do that PetitePass makes hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like PetitePass to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: textarea
+    id: security
+    attributes:
+      label: Security considerations
+      description: Would this touch the master password, the vault file, the clipboard, or where secrets live? How would it stay safe?
+    validations:
+      required: false
