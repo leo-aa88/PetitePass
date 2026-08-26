@@ -1,8 +1,8 @@
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import QDialog, QFormLayout, QLabel, QLineEdit, QMessageBox, QPushButton
 
-from core.strength import check_master_policy
-from core.vault import VAULT, VaultError
+from petitepass.core.strength import check_master_policy
+from petitepass.core.vault import VAULT, VaultError
 
 
 class CreatePasswordDialog(QDialog):

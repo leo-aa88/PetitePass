@@ -1,8 +1,8 @@
 """Tests for the Vault credential CRUD service (Phase 2)."""
 import pytest
 
-from core.credential import Credential
-from core.vault import (
+from petitepass.core.credential import Credential
+from petitepass.core.vault import (
     CredentialNotFoundError,
     DuplicateCredentialError,
     Vault,
@@ -40,7 +40,7 @@ def test_list_query_excludes_password_column(vault, monkeypatch):
     # The security-relevant claim: the SELECT does not fetch the password column,
     # so plaintext is not decrypted merely to render the list. This would break
     # if list_credentials() reverted to Password.select() (all columns).
-    from core import vault as vaultmod
+    from petitepass.core import vault as vaultmod
 
     vault.add("github", "me", "s3cret")
 
@@ -66,7 +66,7 @@ def test_persistence_failure_surfaces_as_vault_error(vault, monkeypatch):
     # leaked as a raw peewee exception (the GUI catches only VaultError).
     from peewee import OperationalError
 
-    from core import vault as vaultmod
+    from petitepass.core import vault as vaultmod
 
     def boom(*a, **k):
         raise OperationalError("simulated disk I/O error")

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from zxcvbn import zxcvbn
 
-from core.paths import common_password_file
+from petitepass.core.paths import common_password_file
 
 # Minimum master-password length. Length dominates guessability far more than
 # character-class variety, so this is the single hard length gate.

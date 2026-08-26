@@ -1,4 +1,4 @@
-from core.strength import MIN_MASTER_LENGTH, check_master_policy, evaluate, is_common
+from petitepass.core.strength import MIN_MASTER_LENGTH, check_master_policy, evaluate, is_common
 
 
 def test_short_password_rejected():

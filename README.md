@@ -23,34 +23,34 @@ Python 3.10+ (clipboard clearing is handled by Qt; no external `xsel` needed).
 
 ## Installing from source
 
-To install and run the password manager on your system, follow these steps:
+Clone the repository:
 
-1. **Clone the Repository:**
+```bash
+git clone https://github.com/leo-aa88/PetitePass.git
+cd PetitePass
+```
 
-   ```bash
-   git clone https://github.com/leo-aa88/PetitePass.git
-   cd PetitePass
-   ```
+**Option A — install as a package** (provides a `petitepass` command):
 
-2. **Install Dependencies:**
-   Ensure you have Python installed, and then install the required packages:
+```bash
+pip install .
+petitepass
+```
 
-   ```bash
-   make setup
-   make install-requirements
-   ```
+**Option B — build a standalone single-file binary** (no Python required at runtime):
 
-3. **Build the application:**
+```bash
+make setup && . .venv/bin/activate
+make install-dev    # includes PyInstaller, which `make build` needs
+make build          # produces dist/petitepass
+```
 
-   ```bash
-   make build
-   ```
+**Run from a checkout without installing** (the package lives under `src/`, so put it on the path):
 
-4. **Install the application:**
-
-   ```bash
-   make install
-   ```
+```bash
+pip install -r requirements.txt
+PYTHONPATH=src python -m petitepass.app
+```
 
 ## Usage
 

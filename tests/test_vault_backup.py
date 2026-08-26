@@ -4,7 +4,13 @@ import stat
 
 import pytest
 
-from core.vault import Vault, VaultAuthError, VaultError, VaultLockedError, VaultRestoredError
+from petitepass.core.vault import (
+    Vault,
+    VaultAuthError,
+    VaultError,
+    VaultLockedError,
+    VaultRestoredError,
+)
 
 MASTER = "correct horse battery staple"
 OTHER = "an entirely different passphrase"
@@ -152,8 +158,8 @@ def test_restore_nul_master_is_vault_error(vault, tmp_path):
 
 
 def test_restore_reopen_failure_after_commit_reports_restored(vault, tmp_path, monkeypatch):
-    from core import vault as vaultmod
-    from core.database import Password
+    from petitepass.core import vault as vaultmod
+    from petitepass.core.database import Password
 
     vault.add("github", "me", "s3cret")
     backup = tmp_path / "b.db"

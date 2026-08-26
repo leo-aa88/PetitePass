@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QDialog, QFormLayout, QLabel, QLineEdit, QMessageBox, QPushButton
 
-from core.vault import VAULT, CredentialNotFoundError, VaultError
+from petitepass.core.vault import VAULT, CredentialNotFoundError, VaultError
 
 
 class DeletePasswordDialog(QDialog):

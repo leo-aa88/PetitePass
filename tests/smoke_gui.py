@@ -30,13 +30,13 @@ QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.Ok)
 QMessageBox.critical = staticmethod(lambda *a, **k: QMessageBox.Ok)
 QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
 
-from core.database import Password  # noqa: E402
-from core.vault import VAULT, VaultAuthError  # noqa: E402
-from gui.createPasswordDialog import CreatePasswordDialog  # noqa: E402
-from gui.deletePasswordDialog import DeletePasswordDialog  # noqa: E402
-from gui.mainWindow import MainWindow  # noqa: E402
-from gui.modifyMasterPasswordDialog import ModifyMasterPasswordDialog  # noqa: E402
-from gui.passwordDialog import PasswordDialog  # noqa: E402
+from petitepass.core.database import Password  # noqa: E402
+from petitepass.core.vault import VAULT, VaultAuthError  # noqa: E402
+from petitepass.gui.createPasswordDialog import CreatePasswordDialog  # noqa: E402
+from petitepass.gui.deletePasswordDialog import DeletePasswordDialog  # noqa: E402
+from petitepass.gui.mainWindow import MainWindow  # noqa: E402
+from petitepass.gui.modifyMasterPasswordDialog import ModifyMasterPasswordDialog  # noqa: E402
+from petitepass.gui.passwordDialog import PasswordDialog  # noqa: E402
 
 MASTER = "correct horse battery staple 7"
 NEW_MASTER = "an even longer new passphrase 42"
@@ -53,7 +53,7 @@ app = QApplication(sys.argv)
 # 0. Constructing AuthDialog must have NO side effects: no vault is created and
 #    nothing is opened just by building the widget (first-run must be driven
 #    from showEvent, not __init__).
-from gui.authDialog import AuthDialog  # noqa: E402
+from petitepass.gui.authDialog import AuthDialog  # noqa: E402
 
 _auth = AuthDialog()
 check("AuthDialog.__init__ does not create a vault", not VAULT.exists())

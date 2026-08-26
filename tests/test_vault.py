@@ -4,8 +4,8 @@ import stat
 
 import pytest
 
-from core.database import Password
-from core.vault import (
+from petitepass.core.database import Password
+from petitepass.core.vault import (
     Vault,
     VaultAuthError,
     VaultError,
@@ -126,7 +126,7 @@ def test_vault_file_is_owner_only(vault_path):
 
 
 def test_empty_master_refused_and_no_file_created(vault_path):
-    from core.vault import VaultError
+    from petitepass.core.vault import VaultError
     with pytest.raises(VaultError):
         Vault(vault_path).create("")
     # An empty passphrase would have produced a *plaintext* SQLite file.
@@ -141,7 +141,7 @@ def test_created_vault_is_not_plaintext(vault_path):
 
 
 def test_open_refuses_when_already_open(vault_path):
-    from core.vault import VaultError
+    from petitepass.core.vault import VaultError
     v = _fresh(vault_path, MASTER)
     with pytest.raises(VaultError):
         v.open(MASTER)
@@ -201,7 +201,7 @@ def test_vault_cipher_params_are_load_bearing(vault_path):
 def test_vault_passes_pinned_cipher_pragmas(vault_path, monkeypatch):
     # The actual pinning contract: every connection is built with the pinned
     # pragma list. This fails if _CIPHER_PRAGMAS is dropped from _make_db.
-    from core import vault as vaultmod
+    from petitepass.core import vault as vaultmod
 
     real = vaultmod.SqlCipherDatabase
     seen = []
@@ -371,7 +371,7 @@ def test_rekey_operation_failure_leaves_vault_unchanged(vault_path, monkeypatch)
 def test_rekey_new_key_verification_failure_restores(vault_path, monkeypatch):
     # The fresh-connection sentinel on the NEW key fails. The rotation must be
     # abandoned and the vault left openable under the current password.
-    from core import vault as vaultmod
+    from petitepass.core import vault as vaultmod
 
     new_master = "yet another long master phrase"
     v = _fresh(vault_path, MASTER)
@@ -432,7 +432,7 @@ def test_rekey_reopen_failure_after_commit_reports_rotated(vault_path, monkeypat
     # Failure of the post-commit _reopen(new): the rotation IS committed on disk,
     # so this must be reported as a rotation (restart) failure, NOT as a wrong
     # current password, and the on-disk vault must be keyed with the NEW password.
-    from core import vault as vaultmod
+    from petitepass.core import vault as vaultmod
 
     new_master = "the committed new master phrase"
     v = _fresh(vault_path, MASTER)

@@ -8,8 +8,8 @@ from PyQt5.QtWidgets import (
     QPushButton,
 )
 
-from core.strength import check_master_policy
-from core.vault import VAULT, VaultAuthError, VaultError, VaultRotatedError
+from petitepass.core.strength import check_master_policy
+from petitepass.core.vault import VAULT, VaultAuthError, VaultError, VaultRotatedError
 
 
 class ModifyMasterPasswordDialog(QDialog):

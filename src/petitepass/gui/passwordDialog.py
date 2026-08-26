@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QDialog, QFormLayout, QLabel, QLineEdit, QMessageBox, QPushButton
 
-from core.vault import VAULT, DuplicateCredentialError, VaultError
+from petitepass.core.vault import VAULT, DuplicateCredentialError, VaultError
 
 
 class PasswordDialog(QDialog):

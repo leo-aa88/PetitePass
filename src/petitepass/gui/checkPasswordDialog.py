@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QDialog, QFormLayout, QLabel, QLineEdit, QMessageBox, QPushButton
 
-from core.strength import evaluate, is_common
+from petitepass.core.strength import evaluate, is_common
 
 _SCORE_LABEL = {
     0: "Very weak", 1: "Weak", 2: "Fair", 3: "Strong", 4: "Very strong",

@@ -15,13 +15,13 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from core.vault import VAULT, VaultAuthError, VaultError, VaultRestoredError
-from gui.checkPasswordDialog import CheckPasswordDialog
-from gui.deletePasswordDialog import DeletePasswordDialog
-from gui.generatePasswordDialog import GeneratePasswordDialog
-from gui.modifyMasterPasswordDialog import ModifyMasterPasswordDialog
-from gui.passwordDialog import PasswordDialog
-from gui.updatePasswordDialog import UpdatePasswordDialog
+from petitepass.core.vault import VAULT, VaultAuthError, VaultError, VaultRestoredError
+from petitepass.gui.checkPasswordDialog import CheckPasswordDialog
+from petitepass.gui.deletePasswordDialog import DeletePasswordDialog
+from petitepass.gui.generatePasswordDialog import GeneratePasswordDialog
+from petitepass.gui.modifyMasterPasswordDialog import ModifyMasterPasswordDialog
+from petitepass.gui.passwordDialog import PasswordDialog
+from petitepass.gui.updatePasswordDialog import UpdatePasswordDialog
 
 # Fixed-width mask so the displayed placeholder does not leak the exact
 # password length to anyone glancing at the screen.

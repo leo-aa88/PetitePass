@@ -4,8 +4,8 @@ import stat
 
 import pytest
 
-from core import paths
-from core.vault import Vault
+from petitepass.core import paths
+from petitepass.core.vault import Vault
 
 MASTER = "correct horse battery staple"
 

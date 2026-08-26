@@ -33,9 +33,9 @@ from contextlib import contextmanager
 from peewee import DatabaseError, DoesNotExist, IntegrityError
 from playhouse.sqlcipher_ext import SqlCipherDatabase
 
-from core.credential import Credential
-from core.database import Password
-from core.paths import db_path, fsync_dir, fsync_file, secure_existing_file
+from petitepass.core.credential import Credential
+from petitepass.core.database import Password
+from petitepass.core.paths import db_path, fsync_dir, fsync_file, secure_existing_file
 
 
 class VaultError(Exception):
