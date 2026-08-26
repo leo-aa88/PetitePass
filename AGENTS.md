@@ -16,7 +16,7 @@ make test                              # pytest against real SQLCipher
 QT_QPA_PLATFORM=offscreen python tests/smoke_gui.py   # headless GUI smoke test
 ```
 
-The pytest suite links against **real SQLCipher** (`sqlcipher3-binary`). Do not mock the database in security tests — the whole point is to exercise real encryption. SQLCipher prints `hmac check failed` lines to stderr on wrong-key tests; that is expected.
+The pytest suite links against **real SQLCipher** (`sqlcipher3`, which ships cross-platform wheels). Do not mock the database in security tests — the whole point is to exercise real encryption. SQLCipher prints `hmac check failed` lines to stderr on wrong-key tests; that is expected.
 
 ## Project layout
 

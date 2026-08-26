@@ -73,7 +73,7 @@ An empty master password is refused up front (`_require_nonempty`): peewee omits
 
 ## 4. Cryptography
 
-- **Library:** SQLCipher 4 via `sqlcipher3-binary`, bound through `playhouse.sqlcipher_ext`.
+- **Library:** SQLCipher 4 via `sqlcipher3` (cross-platform wheels: Linux, macOS, Windows), bound through `playhouse.sqlcipher_ext`.
 - **Passphrase handling:** the master password reaches SQLCipher only through peewee's quote-escaping `passphrase=` / `rekey()` path (`PRAGMA key='%s'` with `'` doubled). The application never builds `PRAGMA` statements with its own string interpolation — that was the historical injection/corruption bug.
 - **Pinned cipher parameters** (set on every connection via `_make_db`, so a future library default change cannot silently make old vaults unreadable):
 
