@@ -1,9 +1,6 @@
-from datetime import datetime
-
-from peewee import DoesNotExist
 from PyQt5.QtWidgets import QDialog, QFormLayout, QLabel, QLineEdit, QMessageBox, QPushButton
 
-from core.database import Password
+from core.vault import VAULT, CredentialNotFoundError, VaultError
 
 
 class UpdatePasswordDialog(QDialog):
@@ -26,28 +23,17 @@ class UpdatePasswordDialog(QDialog):
         layout.addWidget(self.buttons)
 
     def updatePassword(self):
-        name = self.nameField.text()
-        username = self.usernameField.text()
-        password = self.passwordField.text()
-
         try:
-            entry = Password.get(Password.name == name)
-        except DoesNotExist:
+            VAULT.update(self.nameField.text(), self.usernameField.text(),
+                         self.passwordField.text())
+        except CredentialNotFoundError:
             QMessageBox.warning(
                 self, "Error",
                 "The name does not exist! Please type an existing name.")
             return
-        except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
+        except VaultError as exc:
+            QMessageBox.warning(self, "Error", str(exc))
             return
-
-        if username != "":
-            entry.username = username
-        if password != "":
-            entry.password = password
-        entry.updated = datetime.now()
-        try:
-            entry.save()
         except Exception as exc:
             QMessageBox.critical(self, "Error", str(exc))
             return

@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from core.database import Password
+from core.vault import VAULT, VaultError
 from gui.checkPasswordDialog import CheckPasswordDialog
 from gui.deletePasswordDialog import DeletePasswordDialog
 from gui.generatePasswordDialog import GeneratePasswordDialog
@@ -79,37 +79,29 @@ class MainWindow(QWidget):
             QHeaderView.ResizeToContents)
 
         try:
-            # Select only the columns needed to draw the (masked) list; the
-            # password column is fetched on demand in _lookup, so plaintext is
-            # never loaded merely to render the table.
-            rows = list(Password.select(
-                Password.name, Password.username,
-                Password.timestamp, Password.updated))
-        except Exception as exc:
+            # The Vault returns passwordless summaries, so plaintext is never
+            # loaded merely to render the (masked) table.
+            credentials = VAULT.list_credentials()
+        except VaultError as exc:
             QMessageBox.critical(
                 self, "Vault error",
                 f"Could not read the vault: {exc}")
             return
 
-        for row, entry in enumerate(rows):
+        for row, cred in enumerate(credentials):
             self.table.insertRow(row)
-            self._set_readonly(row, 0, entry.name)
-            self._set_readonly(row, 1, entry.username or "")
+            self._set_readonly(row, 0, cred.name)
+            self._set_readonly(row, 1, cred.username)
             self._set_readonly(row, 2, _MASK)
-            self._set_readonly(row, 3, str(entry.timestamp))
-            self._set_readonly(row, 4, str(entry.updated))
-            self.addPasswordButton(row, entry.name)
-            self.addCopyButton(row, entry.name)
+            self._set_readonly(row, 3, cred.created)
+            self._set_readonly(row, 4, cred.updated)
+            self.addPasswordButton(row, cred.name)
+            self.addCopyButton(row, cred.name)
 
     def _set_readonly(self, row, col, text):
         item = QTableWidgetItem(text)
         item.setFlags(item.flags() & ~Qt.ItemIsEditable)
         self.table.setItem(row, col, item)
-
-    @staticmethod
-    def _lookup(name):
-        """Fetch a single credential on demand instead of holding them all."""
-        return Password.get(Password.name == name)
 
     # -- clipboard ---------------------------------------------------------
 
@@ -120,8 +112,8 @@ class MainWindow(QWidget):
 
     def copyToClipboard(self, name):
         try:
-            secret = self._lookup(name).password
-        except Exception as exc:
+            secret = VAULT.get_password(name)
+        except VaultError as exc:
             QMessageBox.critical(self, "Error", str(exc))
             return
         QApplication.clipboard().setText(secret)
@@ -154,8 +146,8 @@ class MainWindow(QWidget):
         button = self.table.cellWidget(row, 5)
         if button.text() == "Show":
             try:
-                secret = self._lookup(name).password
-            except Exception as exc:
+                secret = VAULT.get_password(name)
+            except VaultError as exc:
                 QMessageBox.critical(self, "Error", str(exc))
                 return
             button.setText("Hide")

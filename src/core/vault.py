@@ -25,12 +25,14 @@ place. It copies the closed vault to a temporary file, rekeys and verifies that
 There is therefore no second file whose relationship to the real vault
 ``open()`` must adjudicate: ``self._path`` is always a complete, openable vault.
 """
+import datetime
 import os
 import shutil
 
-from peewee import DatabaseError, IntegrityError
+from peewee import DatabaseError, DoesNotExist, IntegrityError
 from playhouse.sqlcipher_ext import SqlCipherDatabase
 
+from core.credential import Credential
 from core.database import Password
 from core.paths import db_path, secure_existing_file
 
@@ -59,6 +61,18 @@ class VaultRotatedError(VaultError):
     from VaultAuthError so callers never tell the user the current password was
     wrong after a rotation has already been committed.
     """
+
+
+class VaultLockedError(VaultError):
+    """A credential operation was attempted while the vault was closed."""
+
+
+class DuplicateCredentialError(VaultError):
+    """A credential with the same name already exists."""
+
+
+class CredentialNotFoundError(VaultError):
+    """No credential exists with the requested name."""
 
 
 # Table name peewee derives from the Password model.
@@ -229,7 +243,95 @@ class Vault:
         self._master = None
         Password._meta.database = None
 
+    # -- credential CRUD ---------------------------------------------------
+    #
+    # These are the only supported way to touch stored credentials. The GUI
+    # calls them instead of reaching into the ORM, so business rules (name
+    # uniqueness, "credential must exist", not loading every password to draw a
+    # list) live here rather than being re-implemented in each dialog.
+
+    def list_credentials(self) -> list:
+        """Return every credential as a passwordless :class:`Credential`.
+
+        The password column is intentionally not selected, so plaintext is not
+        loaded merely to render the (masked) list.
+        """
+        self._require_open()
+        rows = Password.select(
+            Password.name, Password.username,
+            Password.timestamp, Password.updated
+        ).order_by(Password.name)
+        return [
+            Credential(
+                name=row.name,
+                username=row.username or "",
+                created=str(row.timestamp),
+                updated=str(row.updated),
+            )
+            for row in rows
+        ]
+
+    def get_password(self, name: str) -> str:
+        """Return the plaintext password for ``name`` (fetched on demand)."""
+        self._require_open()
+        try:
+            return Password.get(Password.name == name).password
+        except DoesNotExist as exc:
+            raise CredentialNotFoundError(
+                f"No credential named {name!r}.") from exc
+
+    def add(self, name: str, username: str, password: str) -> None:
+        """Create a credential. Raises DuplicateCredentialError on a clash."""
+        self._require_open()
+        if not name:
+            raise VaultError("The name cannot be empty.")
+        if not password:
+            raise VaultError("The password cannot be empty.")
+        # DB unique index is the real guard; the pre-check covers legacy vaults
+        # whose index could not be built (see _migrate_schema).
+        if Password.select().where(Password.name == name).exists():
+            raise DuplicateCredentialError(
+                f"A credential named {name!r} already exists.")
+        try:
+            Password.create(name=name, username=username, password=password)
+        except IntegrityError as exc:
+            raise DuplicateCredentialError(
+                f"A credential named {name!r} already exists.") from exc
+
+    def update(self, name: str, username=None, password=None) -> None:
+        """Update a credential in place.
+
+        ``username``/``password`` that are None or empty are left unchanged,
+        preserving the historical dialog behaviour.
+        """
+        self._require_open()
+        try:
+            entry = Password.get(Password.name == name)
+        except DoesNotExist as exc:
+            raise CredentialNotFoundError(
+                f"No credential named {name!r}.") from exc
+        if username:
+            entry.username = username
+        if password:
+            entry.password = password
+        entry.updated = datetime.datetime.now()
+        entry.save()
+
+    def delete(self, name: str) -> None:
+        """Delete a credential. Raises CredentialNotFoundError if absent."""
+        self._require_open()
+        try:
+            entry = Password.get(Password.name == name)
+        except DoesNotExist as exc:
+            raise CredentialNotFoundError(
+                f"No credential named {name!r}.") from exc
+        entry.delete_instance()
+
     # -- helpers -----------------------------------------------------------
+
+    def _require_open(self) -> None:
+        if not self.is_open:
+            raise VaultLockedError("The vault is not open.")
 
     @staticmethod
     def _require_nonempty(master) -> None:
