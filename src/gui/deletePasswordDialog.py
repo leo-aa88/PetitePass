@@ -38,9 +38,6 @@ class DeletePasswordDialog(QDialog):
         except VaultError as exc:
             QMessageBox.warning(self, "Error", str(exc))
             return
-        except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
-            return
 
         QMessageBox.information(
             self, "Success", "Password record deleted successfully!")

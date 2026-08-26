@@ -30,16 +30,75 @@ def test_add_and_list(vault):
     assert creds[0].username == "me@example.com"
 
 
-def test_list_summaries_carry_no_password(vault):
+def test_credential_dataclass_has_no_password_field(vault):
+    # Shape check only: the domain object cannot carry a password by construction.
     vault.add("github", "me", "s3cret")
-    cred = vault.list_credentials()[0]
-    assert not hasattr(cred, "password")
+    assert not hasattr(vault.list_credentials()[0], "password")
+
+
+def test_list_query_excludes_password_column(vault, monkeypatch):
+    # The security-relevant claim: the SELECT does not fetch the password column,
+    # so plaintext is not decrypted merely to render the list. This would break
+    # if list_credentials() reverted to Password.select() (all columns).
+    from core import vault as vaultmod
+
+    vault.add("github", "me", "s3cret")
+
+    captured = {}
+    original = vaultmod.Password.select
+
+    def spy(*fields):
+        captured["fields"] = fields
+        return original(*fields)
+
+    monkeypatch.setattr(vaultmod.Password, "select", spy)
+    vault.list_credentials()
+
+    # Compare by column name -- peewee Field.__eq__ builds expressions, so a
+    # normal `in` membership test cannot be used on Field objects.
+    selected = {getattr(f, "name", None) for f in captured["fields"]}
+    assert "password" not in selected
+    assert "name" in selected and "username" in selected
+
+
+def test_persistence_failure_surfaces_as_vault_error(vault, monkeypatch):
+    # A DatabaseError on an OPEN vault must be translated to VaultError, not
+    # leaked as a raw peewee exception (the GUI catches only VaultError).
+    from peewee import OperationalError
+
+    from core import vault as vaultmod
+
+    def boom(*a, **k):
+        raise OperationalError("simulated disk I/O error")
+
+    monkeypatch.setattr(vaultmod.Password, "select", boom)
+    with pytest.raises(VaultError):
+        vault.list_credentials()
+
+    monkeypatch.setattr(vaultmod.Password, "get", boom)
+    with pytest.raises(VaultError):
+        vault.get_password("github")
 
 
 def test_list_is_ordered_by_name(vault):
     for name in ("charlie", "alpha", "bravo"):
         vault.add(name, "", "x")
     assert [c.name for c in vault.list_credentials()] == ["alpha", "bravo", "charlie"]
+
+
+def test_never_updated_credential_has_empty_updated_not_none(vault):
+    # A NULL 'updated' must not surface as the string "None".
+    vault.add("github", "me", "s3cret")
+    cred = vault.list_credentials()[0]
+    assert cred.updated == ""
+    assert cred.created not in ("", "None")
+
+
+def test_updated_is_populated_after_update(vault):
+    vault.add("github", "me", "s3cret")
+    vault.update("github", "", "newpw")
+    cred = vault.list_credentials()[0]
+    assert cred.updated not in ("", "None")
 
 
 def test_get_password_returns_secret(vault):
