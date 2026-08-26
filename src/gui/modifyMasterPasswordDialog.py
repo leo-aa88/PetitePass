@@ -8,9 +8,9 @@ class ModifyMasterPasswordDialog(QDialog):
     """Rotate the master password through the Vault.
 
     There is no sidecar verifier to update, so the verifier/vault desync that
-    could previously lock the user out is gone. The Vault additionally takes an
-    on-disk backup before the SQLCipher rekey and restores it if the new key
-    cannot be verified, so a failed rotation leaves the old key working.
+    could previously lock the user out is gone. The Vault rekeys a temporary
+    copy and atomically replaces the vault with it, so a failure at any point
+    leaves the original vault openable under the current password.
     """
 
     def __init__(self, parent=None):

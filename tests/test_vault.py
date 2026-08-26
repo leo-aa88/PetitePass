@@ -5,7 +5,7 @@ import stat
 import pytest
 
 from core.database import Password
-from core.vault import Vault, VaultAuthError, VaultExistsError, VaultMissingError
+from core.vault import Vault, VaultAuthError, VaultError, VaultExistsError, VaultMissingError
 
 MASTER = "correct horse battery staple"
 # Deliberately hostile: quotes, double-quotes, backslash, unicode, whitespace.
@@ -168,6 +168,116 @@ def test_legacy_vault_without_unique_index_is_migrated(vault_path):
     Vault(vault_path).open(MASTER)  # must migrate in the unique index
     with pytest.raises(IntegrityError):
         Password.create(name="a", password="2")
+
+
+def _tmp_of(path):
+    return path + ".rekey.tmp"
+
+
+def test_successful_rekey_leaves_no_temp_file(vault_path):
+    v = _fresh(vault_path, MASTER)
+    Password.create(name="gh", password="s3cret")
+    v.rekey(MASTER, TRICKY)
+    assert not os.path.exists(_tmp_of(vault_path))
+    v.close()
+
+
+def test_open_cleans_and_ignores_stale_temp(vault_path):
+    # Simulates a crash *before* the atomic replace: the real vault is intact and
+    # a leftover working copy sits beside it. open() must succeed on the real
+    # vault and clear the stale copy, never treat the copy as authoritative.
+    _fresh(vault_path, MASTER).close()
+    with open(_tmp_of(vault_path), "wb") as f:
+        f.write(b"garbage not a vault")
+    v = Vault(vault_path)
+    v.open(MASTER)
+    assert not os.path.exists(_tmp_of(vault_path))
+    v.close()
+
+
+def test_rekey_operation_failure_leaves_vault_unchanged(vault_path, monkeypatch):
+    # SQLCipher rekey raises after the copy exists. Original must be untouched,
+    # the session must stay usable on the current key, and no spare is orphaned.
+    from playhouse.sqlcipher_ext import SqlCipherDatabase
+
+    v = _fresh(vault_path, MASTER)
+    Password.create(name="gh", password="s3cret")
+
+    def boom(self, passphrase):
+        raise RuntimeError("simulated rekey crash mid-rewrite")
+
+    monkeypatch.setattr(SqlCipherDatabase, "rekey", boom)
+    with pytest.raises(VaultError):
+        v.rekey(MASTER, "a different long master phrase")
+
+    assert v.is_open
+    assert Password.get(Password.name == "gh").password == "s3cret"
+    assert not os.path.exists(_tmp_of(vault_path))
+    v.close()
+    v2 = Vault(vault_path)
+    v2.open(MASTER)  # old master must still work
+    assert Password.select().count() == 1
+    v2.close()
+
+
+def test_rekey_new_key_verification_failure_restores(vault_path, monkeypatch):
+    # The fresh-connection sentinel on the NEW key fails. The rotation must be
+    # abandoned and the vault left openable under the current password.
+    from core import vault as vaultmod
+
+    new_master = "yet another long master phrase"
+    v = _fresh(vault_path, MASTER)
+    Password.create(name="gh", password="s3cret")
+
+    original = vaultmod.Vault._connect_verified
+
+    def flaky(self, path, master):
+        if master == new_master:
+            raise vaultmod.VaultAuthError("simulated verify failure")
+        return original(self, path, master)
+
+    monkeypatch.setattr(vaultmod.Vault, "_connect_verified", flaky)
+    with pytest.raises(VaultError):
+        v.rekey(MASTER, new_master)
+
+    assert v.is_open
+    assert Password.get(Password.name == "gh").password == "s3cret"
+    assert not os.path.exists(_tmp_of(vault_path))
+    v.close()
+    v2 = Vault(vault_path)
+    with pytest.raises(VaultAuthError):
+        v2.open(new_master)  # the never-committed new key must NOT open
+    v2.open(MASTER)
+    assert Password.select().count() == 1
+    v2.close()
+
+
+def test_rekey_replace_failure_leaves_vault_unchanged(vault_path, monkeypatch):
+    # Failure exactly at the atomic-replace boundary, after the copy is verified.
+    import os as os_module
+
+    v = _fresh(vault_path, MASTER)
+    Password.create(name="gh", password="s3cret")
+
+    real_replace = os_module.replace
+
+    def failing_replace(src, dst, *a, **k):
+        if src.endswith(".rekey.tmp"):
+            raise OSError("simulated replace failure")
+        return real_replace(src, dst, *a, **k)
+
+    monkeypatch.setattr(os_module, "replace", failing_replace)
+    with pytest.raises(VaultError):
+        v.rekey(MASTER, "a committed-boundary master phrase")
+
+    assert v.is_open
+    assert Password.get(Password.name == "gh").password == "s3cret"
+    assert not os.path.exists(_tmp_of(vault_path))
+    v.close()
+    v2 = Vault(vault_path)
+    v2.open(MASTER)
+    assert Password.select().count() == 1
+    v2.close()
 
 
 def test_legacy_vault_with_existing_dupes_still_opens(vault_path):
