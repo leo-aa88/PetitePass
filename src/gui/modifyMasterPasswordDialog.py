@@ -1,7 +1,15 @@
-from PyQt5.QtWidgets import QDialog, QFormLayout, QLabel, QLineEdit, QMessageBox, QPushButton
+from PyQt5.QtWidgets import (
+    QApplication,
+    QDialog,
+    QFormLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+)
 
 from core.strength import check_master_policy
-from core.vault import VAULT, VaultAuthError, VaultError
+from core.vault import VAULT, VaultAuthError, VaultError, VaultRotatedError
 
 
 class ModifyMasterPasswordDialog(QDialog):
@@ -51,6 +59,13 @@ class ModifyMasterPasswordDialog(QDialog):
 
         try:
             VAULT.rekey(current_password, password)
+        except VaultRotatedError as exc:
+            # The rotation committed on disk but the session could not be
+            # rebound. Do NOT claim the current password was wrong; the vault is
+            # now keyed with the new password. Tell the user and restart.
+            QMessageBox.critical(self, "Restart required", str(exc))
+            QApplication.quit()
+            return
         except VaultAuthError:
             QMessageBox.warning(
                 self, "Error", "The current password is incorrect.")

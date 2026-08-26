@@ -51,6 +51,16 @@ class VaultExistsError(VaultError):
     """A vault already exists and would be overwritten."""
 
 
+class VaultRotatedError(VaultError):
+    """Rekey committed on disk, but the session could not be rebound.
+
+    The vault is now encrypted with the *new* master password; the current
+    session is unusable and the application must be restarted. This is distinct
+    from VaultAuthError so callers never tell the user the current password was
+    wrong after a rotation has already been committed.
+    """
+
+
 # Cheap query that forces SQLCipher to decrypt page 1; raises DatabaseError on
 # a wrong key. This is what makes "the key is correct" observable.
 _SENTINEL = "SELECT count(*) FROM sqlite_master"
@@ -175,7 +185,9 @@ class Vault:
             self._reopen(current)
             raise VaultError("Rekey failed; the vault was left unchanged.") from exc
 
-        # Swap the verified copy into place atomically and record it durably.
+        # Swap the verified copy into place atomically. os.replace IS the commit
+        # point: everything before it can fail with the vault "left unchanged";
+        # everything after it means the rotation has happened on disk.
         try:
             os.replace(tmp, self._path)
         except OSError as exc:
@@ -184,10 +196,23 @@ class Vault:
             raise VaultError(
                 "Rekey could not be committed; the vault was left unchanged."
             ) from exc
+
+        # Committed. The on-disk vault is now keyed with `new` whether or not the
+        # session can be rebound, so advance the master and report a *rotation*
+        # failure (not an auth failure) if reopening fails.
         self._fsync_dir(os.path.dirname(self._path) or ".")
         secure_existing_file(self._path)
-
-        self._reopen(new)
+        self._master = new
+        try:
+            self._reopen(new)
+        except VaultAuthError as exc:
+            self._db = None
+            Password._meta.database = None
+            raise VaultRotatedError(
+                "The master password was changed, but the vault could not be "
+                "reopened in this session. Restart PetitePass and unlock with "
+                "the NEW master password."
+            ) from exc
         return self
 
     def close(self) -> None:
@@ -243,19 +268,20 @@ class Vault:
 
     @staticmethod
     def _fsync_file(path: str) -> None:
+        # Flush the working copy to disk before it is committed with os.replace.
+        # This is the durability barrier for the copy, so a failure must NOT be
+        # swallowed: it propagates and aborts the rekey with the vault unchanged.
+        fd = os.open(path, os.O_RDONLY)
         try:
-            fd = os.open(path, os.O_RDONLY)
-            try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-        except OSError:
-            pass
+            os.fsync(fd)
+        finally:
+            os.close(fd)
 
     @staticmethod
     def _fsync_dir(directory: str) -> None:
-        # Durably record the rename. Not supported on every platform (e.g.
-        # Windows), so failure is non-fatal.
+        # Durably record the rename after the commit. Directory fsync is not
+        # supported on every platform (e.g. Windows) and runs post-commit, so
+        # here -- unlike _fsync_file -- failure is genuinely non-fatal.
         try:
             fd = os.open(directory, os.O_RDONLY)
             try:

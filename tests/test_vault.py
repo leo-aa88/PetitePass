@@ -5,7 +5,14 @@ import stat
 import pytest
 
 from core.database import Password
-from core.vault import Vault, VaultAuthError, VaultError, VaultExistsError, VaultMissingError
+from core.vault import (
+    Vault,
+    VaultAuthError,
+    VaultError,
+    VaultExistsError,
+    VaultMissingError,
+    VaultRotatedError,
+)
 
 MASTER = "correct horse battery staple"
 # Deliberately hostile: quotes, double-quotes, backslash, unicode, whitespace.
@@ -269,6 +276,68 @@ def test_rekey_replace_failure_leaves_vault_unchanged(vault_path, monkeypatch):
     monkeypatch.setattr(os_module, "replace", failing_replace)
     with pytest.raises(VaultError):
         v.rekey(MASTER, "a committed-boundary master phrase")
+
+    assert v.is_open
+    assert Password.get(Password.name == "gh").password == "s3cret"
+    assert not os.path.exists(_tmp_of(vault_path))
+    v.close()
+    v2 = Vault(vault_path)
+    v2.open(MASTER)
+    assert Password.select().count() == 1
+    v2.close()
+
+
+def test_rekey_reopen_failure_after_commit_reports_rotated(vault_path, monkeypatch):
+    # Failure of the post-commit _reopen(new): the rotation IS committed on disk,
+    # so this must be reported as a rotation (restart) failure, NOT as a wrong
+    # current password, and the on-disk vault must be keyed with the NEW password.
+    from core import vault as vaultmod
+
+    new_master = "the committed new master phrase"
+    v = _fresh(vault_path, MASTER)
+    Password.create(name="gh", password="s3cret")
+
+    original = vaultmod.Vault._connect_verified
+
+    def flaky(self, path, master):
+        # Allow the copy-open (current) and the new-key verify on the tmp copy;
+        # fail only the reopen of the *real* path with the new key (post-commit).
+        if master == new_master and path == self._path:
+            raise vaultmod.VaultAuthError("simulated post-commit reopen failure")
+        return original(self, path, master)
+
+    monkeypatch.setattr(vaultmod.Vault, "_connect_verified", flaky)
+    with pytest.raises(VaultRotatedError):
+        v.rekey(MASTER, new_master)
+
+    assert v.is_open is False
+    assert Password._meta.database is None
+
+    # Drop the injected failure before verifying the real on-disk state.
+    monkeypatch.undo()
+
+    v2 = Vault(vault_path)
+    with pytest.raises(VaultAuthError):
+        v2.open(MASTER)  # old key must NOT open -- rotation committed
+    v2.open(new_master)
+    assert Password.select().count() == 1
+    v2.close()
+
+
+def test_rekey_fsync_failure_leaves_vault_unchanged(vault_path, monkeypatch):
+    # A failed fsync of the working copy must abort before os.replace destroys
+    # the original, leaving the vault openable under the current password.
+    import os as os_module
+
+    v = _fresh(vault_path, MASTER)
+    Password.create(name="gh", password="s3cret")
+
+    def failing_fsync(fd):
+        raise OSError("simulated fsync failure")
+
+    monkeypatch.setattr(os_module, "fsync", failing_fsync)
+    with pytest.raises(VaultError):
+        v.rekey(MASTER, "an fsync boundary master phrase")
 
     assert v.is_open
     assert Password.get(Password.name == "gh").password == "s3cret"
