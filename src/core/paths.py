@@ -35,7 +35,9 @@ _COMMON_PASSWORD_LOCATIONS = (
 
 def data_dir() -> Path:
     """Return the PetitePass data directory, creating it 0700 if needed."""
-    d = Path(platformdirs.user_data_dir(APP_NAME))
+    # appauthor=False keeps Windows at %LOCALAPPDATA%\PetitePass; the default
+    # (appauthor=None) would nest it as %LOCALAPPDATA%\PetitePass\PetitePass.
+    d = Path(platformdirs.user_data_dir(APP_NAME, appauthor=False))
     d.mkdir(mode=0o700, parents=True, exist_ok=True)
     # mkdir's mode is subject to umask and is ignored if the dir already
     # existed, so enforce the permission explicitly (no-op on Windows).
@@ -81,26 +83,41 @@ def secure_existing_file(path) -> None:
 # -- internals ------------------------------------------------------------
 
 def _migrate(legacy: Path, new: Path) -> bool:
-    """Copy a legacy vault to the new location atomically. Returns success.
+    """Copy a legacy vault to the new location. Returns whether ``new`` is now
+    the vault.
 
-    The original is left untouched until the copy is durably in place under an
-    atomic rename, and is removed only afterwards, so an interrupted migration
-    can never lose the vault.
+    Uses the same commit discipline as Vault.rekey: the copy is fsync'd with a
+    *fatal* flush (a failed flush aborts before the commit, leaving the original
+    untouched), ``os.replace`` is the single commit point, and everything after
+    it is best-effort that can never flip the result back to failure -- so
+    ``db_path`` never keeps using ``legacy`` once ``new`` exists (no split-brain).
     """
     tmp = new.with_name(new.name + ".migrating")
+
+    # Pre-commit: prepare a durable copy. Any failure here leaves the original
+    # as the only vault and returns False.
     try:
         shutil.copy2(legacy, tmp)
         _harden(tmp, stat.S_IRUSR | stat.S_IWUSR)
-        _fsync_path(tmp)
-        os.replace(tmp, new)          # atomic within the data dir
-        _fsync_path(new.parent)
-        secure_existing_file(new)
+        _fsync_file(tmp)              # fatal: propagates on failure
     except OSError:
         _unlink_quiet(tmp)
         return False
-    # New copy is committed; drop the legacy vault (and its dir if now empty).
-    _unlink_quiet(legacy)
+
+    # Commit.
     try:
+        os.replace(tmp, new)          # atomic within the data dir
+    except OSError:
+        _unlink_quiet(tmp)
+        return False                  # original still intact
+
+    # Post-commit: `new` is authoritative regardless of what follows, so these
+    # steps must never report failure or the caller would use `legacy` while
+    # `new` exists.
+    try:
+        _fsync_dir(new.parent)
+        secure_existing_file(new)
+        _unlink_quiet(legacy)
         legacy.parent.rmdir()
     except OSError:
         pass
@@ -117,9 +134,22 @@ def _harden(path: Path, mode: int) -> None:
         pass
 
 
-def _fsync_path(path: Path) -> None:
+def _fsync_file(path: Path) -> None:
+    # Durability barrier for the copy before it is committed with os.replace.
+    # A failure must NOT be swallowed: it propagates so the migration aborts
+    # with the original vault untouched (mirrors Vault._fsync_file).
+    fd = os.open(str(path), os.O_RDONLY)
     try:
-        fd = os.open(str(path), os.O_RDONLY)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _fsync_dir(directory: Path) -> None:
+    # Post-commit durability of the rename; unsupported on some platforms
+    # (e.g. Windows), and it runs after the commit, so failure is non-fatal.
+    try:
+        fd = os.open(str(directory), os.O_RDONLY)
         try:
             os.fsync(fd)
         finally:

@@ -7,11 +7,14 @@ import os
 import sys
 import tempfile
 
-# Redirect HOME and the platformdirs data dir *before* importing anything that
+# Redirect the data dir on every platform *before* importing anything that
 # computes the vault path, so the smoke test never touches the real vault.
+# (Linux/macOS read HOME/XDG_DATA_HOME; Windows reads LOCALAPPDATA.)
 _TMP = tempfile.mkdtemp()
+_DATA = os.path.join(_TMP, "data")
 os.environ["HOME"] = _TMP
-os.environ["XDG_DATA_HOME"] = os.path.join(_TMP, "data")
+os.environ["XDG_DATA_HOME"] = _DATA
+os.environ["LOCALAPPDATA"] = _DATA
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 

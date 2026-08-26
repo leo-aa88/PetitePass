@@ -198,6 +198,48 @@ def test_vault_cipher_params_are_load_bearing(vault_path):
     v.close()
 
 
+def test_vault_passes_pinned_cipher_pragmas(vault_path, monkeypatch):
+    # The actual pinning contract: every connection is built with the pinned
+    # pragma list. This fails if _CIPHER_PRAGMAS is dropped from _make_db.
+    from core import vault as vaultmod
+
+    real = vaultmod.SqlCipherDatabase
+    seen = []
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("pragmas"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(vaultmod, "SqlCipherDatabase", spy)
+
+    v = Vault(vault_path)
+    v.create(MASTER)      # create connection
+    v.close()
+    v.open(MASTER)        # open connection
+    v.close()
+
+    assert seen, "no SqlCipherDatabase was constructed"
+    assert all(p == vaultmod._CIPHER_PRAGMAS for p in seen), seen
+    assert ("kdf_iter", 256000) in vaultmod._CIPHER_PRAGMAS
+
+
+def test_pinned_vault_opens_with_bare_library_defaults(vault_path):
+    # Reverse of the compatibility direction: a vault created with pinned params
+    # opens under a bare connection (proves pinned == the library defaults, so
+    # no lock-in / no divergence).
+    from playhouse.sqlcipher_ext import SqlCipherDatabase
+
+    v = _fresh(vault_path, MASTER)
+    Password.create(name="gh", password="s3cret")
+    v.close()
+
+    bare = SqlCipherDatabase(vault_path, passphrase=MASTER)  # no pragmas
+    bare.connect()
+    assert bare.execute_sql(
+        "SELECT password FROM password WHERE name='gh'").fetchone()[0] == "s3cret"
+    bare.close()
+
+
 def test_legacy_default_created_vault_still_opens(vault_path):
     # A vault created by the bare library (no explicit cipher pragmas), as older
     # PetitePass versions did, must still open under the now-pinned Vault.
