@@ -105,6 +105,40 @@ check("show reveals plaintext", win.table.item(0, 2).text() == "s3cr'et\"\\pw")
 win.togglePasswordVisibility(0, "github")
 check("hide re-masks", win.table.item(0, 2).text() == "•" * 8)
 
+# 6b. Search / filter.
+win.searchField.setText("git")
+check("filter keeps a matching row visible", not win.table.isRowHidden(0))
+win.searchField.setText("zzzz-no-match")
+check("filter hides a non-matching row", win.table.isRowHidden(0))
+win.searchField.setText("")
+
+# 6c. Copy username (not a secret; goes straight to the clipboard).
+win.copyUsernameToClipboard("me@example.com")
+check("copy-username puts username on clipboard",
+      app.clipboard().text() == "me@example.com")
+
+# 6d. Encrypted backup via the GUI slot (file dialog stubbed).
+from PyQt5.QtWidgets import QFileDialog, QInputDialog  # noqa: E402
+
+_backup = os.path.join(_TMP, "smoke-backup.db")
+QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (_backup, ""))
+win.backupVault()
+check("backup file was written", os.path.exists(_backup))
+
+# 6e. Diverge, then restore from that backup (open + master-prompt stubbed).
+_pd = PasswordDialog(win)
+_pd.nameField.setText("gitlab")
+_pd.passwordField.setText("temp-secret")
+_pd.savePassword()
+check("second entry added before restore",
+      {c.name for c in VAULT.list_credentials()} == {"github", "gitlab"})
+
+QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (_backup, ""))
+QInputDialog.getText = staticmethod(lambda *a, **k: (MASTER, True))
+win.restoreVault()
+check("restore reverts vault to backup contents",
+      {c.name for c in VAULT.list_credentials()} == {"github"})
+
 # 7. Rekey through the real dialog slot, then reopen with the new master.
 mm = ModifyMasterPasswordDialog(win)
 mm.currentPasswordField.setText(MASTER)
@@ -127,7 +161,13 @@ dd.nameField.setText("github")
 dd.deletePassword()
 check("delete removes record", Password.select().count() == 0)
 
-VAULT.close()
+# 9. Auto-lock must emit `locked` AND actually close the vault (no modal open).
+_locked = {"v": False}
+win.locked.connect(lambda: _locked.__setitem__("v", True))
+win._on_inactivity()
+check("auto-lock emits locked signal", _locked["v"])
+check("auto-lock actually closes the vault", not VAULT.is_open)
+
 failed = [label for label, ok in checks if not ok]
 print(f"\n{len(checks) - len(failed)}/{len(checks)} checks passed")
 sys.exit(1 if failed else 0)

@@ -4,10 +4,15 @@ from core.vault import VAULT, CredentialNotFoundError, VaultError
 
 
 class UpdatePasswordDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, name=None, username=None):
         super().__init__(parent)
         self.initUI()
         self.setWindowTitle("Update password entry")
+        if name is not None:
+            self.nameField.setText(name)
+            self.nameField.setReadOnly(True)  # editing a specific row
+        if username:
+            self.usernameField.setText(username)
 
     def initUI(self):
         layout = QFormLayout(self)
