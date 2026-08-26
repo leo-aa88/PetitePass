@@ -1,6 +1,6 @@
 [project]
 name = "petitepass"
-version = "2.0.5"
+dynamic = ["version"]
 description = "Simple and secure lightweight password manager (SQLCipher + PyQt5)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,6 +25,9 @@ petitepass = "petitepass.app:main"
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = { attr = "petitepass.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

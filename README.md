@@ -80,6 +80,8 @@ If you believe you have found a vulnerability, please read [SECURITY.md](SECURIT
 
 Requires **Python 3.10+**. The clipboard is handled by Qt — no external `xsel` is needed.
 
+**Prebuilt binaries.** Each release ships standalone single-file binaries for Linux, macOS, and Windows on the [Releases page](https://github.com/leo-aa88/PetitePass/releases) (verify against `SHA256SUMS.txt`). Download one and run it — no Python required. Otherwise, build or install from source:
+
 Clone the repository:
 
 ```bash

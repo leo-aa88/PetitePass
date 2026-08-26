@@ -1,0 +1,266 @@
+# Build the PetitePass GUI into a standalone single-file binary for Linux,
+# macOS, and Windows, and publish a GitHub Release.
+#
+# - On every pull request, the OS matrix is built as a DRY RUN (no tag, no
+#   publish) so a packaging break is caught before merge.
+# - A release is cut manually via workflow_dispatch (choose a semver bump), or
+#   by pushing a v*.*.* tag. The dispatch path bumps src/petitepass/__init__.py,
+#   commits, and tags — so the tag, the package metadata, and `petitepass
+#   --version` all agree.
+#
+# PyInstaller cannot cross-compile, so each OS is built on its own native
+# runner. The bundled common-password list is added via --add-data (the src:dest
+# separator is ':' on POSIX and ';' on Windows).
+name: Release
+
+on:
+  pull_request:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Semver bump over the current version in src/petitepass/__init__.py"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  version:
+    name: Resolve version
+    # Skipped on pull_request (dry run needs no tag).
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      # Gate the release on the same checks CI runs on main. (The GUI smoke test
+      # stays in python-app.yml; this is the non-Qt gate.)
+      - name: Lint, type-check, test
+        run: |
+          ruff check src tests
+          mypy
+          python -m pytest tests -q
+
+      - name: Resolve release version
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_BUMP: ${{ github.event.inputs.bump }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          init="src/petitepass/__init__.py"
+
+          read_version() {
+            python -c "import re,sys; print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', open('$init').read()).group(1))"
+          }
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            cur="$(read_version)"
+            IFS='.' read -r major minor patch <<< "$cur"
+            case "${INPUT_BUMP:-patch}" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              patch) patch=$((patch + 1)) ;;
+              *) echo "unknown bump: $INPUT_BUMP" >&2; exit 1 ;;
+            esac
+            version="${major}.${minor}.${patch}"
+            tag="v${version}"
+            echo "Bump ${INPUT_BUMP:-patch}: ${cur} -> ${version}"
+
+            if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+              echo "tag ${tag} already exists" >&2; exit 1
+            fi
+
+            # Write the new version, commit, and tag so the tagged tree matches.
+            python - "$init" "$version" <<'PY'
+          import re, sys
+          path, version = sys.argv[1], sys.argv[2]
+          text = open(path).read()
+          text = re.sub(r'__version__\s*=\s*"[^"]+"', f'__version__ = "{version}"', text)
+          open(path, "w").write(text)
+          PY
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add "$init"
+            git commit -m "chore(release): ${tag}"
+            git tag -a "$tag" -m "$tag"
+            # A push with GITHUB_TOKEN does not start another workflow run, so
+            # the tag push below cannot recurse into the push trigger.
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+            git push origin "$tag"
+          else
+            # Tag push: the tag is the source of truth; verify it matches the file.
+            tag="$REF_NAME"
+            version="${tag#v}"
+            file_version="$(read_version)"
+            if [ "$version" != "$file_version" ]; then
+              echo "tag ${tag} does not match __version__ ${file_version}" >&2
+              exit 1
+            fi
+          fi
+
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.os }}/${{ matrix.arch }}
+    needs: version
+    # Runs on PRs (dry run, version skipped) and on releases (version succeeded).
+    if: ${{ always() && needs.version.result != 'failure' && needs.version.result != 'cancelled' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            os: linux
+            arch: x86_64
+          - runner: macos-13
+            os: macos
+            arch: x86_64
+          - runner: macos-latest
+            os: macos
+            arch: arm64
+          - runner: windows-latest
+            os: windows
+            arch: x86_64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # On a release, build the tagged tree; on a PR this is empty and the
+          # PR head is used.
+          ref: ${{ needs.version.outputs.tag }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Build binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          sep=":"; bin="petitepass"
+          if [ "${{ matrix.os }}" = "windows" ]; then sep=";"; bin="petitepass.exe"; fi
+          pyinstaller --onefile --windowed --name petitepass --paths src \
+            --add-data "src/petitepass/core/data/10k-most-common.txt${sep}petitepass/core/data" \
+            src/petitepass/app.py
+          test -s "dist/${bin}"
+          mkdir -p staging
+          cp "dist/${bin}" "staging/${bin}"
+
+      - name: Verify binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          # --selftest and --version are Qt-free, so they run without a display
+          # or Qt system libraries; --selftest also proves the bundled
+          # common-password list resolves inside the frozen binary. On Windows
+          # the --windowed build detaches stdout, so there we only assert the
+          # binary exists (checked in the build step).
+          if [ "${{ matrix.os }}" != "windows" ]; then
+            staging/petitepass --version
+            out="$(staging/petitepass --selftest)"
+            echo "$out"
+            case "$out" in
+              "selftest OK:"*) ;;
+              *) echo "selftest failed: $out" >&2; exit 1 ;;
+            esac
+          fi
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: petitepass-${{ matrix.os }}-${{ matrix.arch }}
+          path: staging/*
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 7 }}
+
+  publish:
+    name: Publish release
+    # Only on a real release, never on a PR dry run.
+    if: ${{ github.event_name != 'pull_request' }}
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Package archives
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          out="$PWD/dist"
+          for dir in artifacts/petitepass-*; do
+            platform="$(basename "$dir")"; platform="${platform#petitepass-}"
+            if [ -f "$dir/petitepass.exe" ]; then
+              (cd "$dir" && zip -q "$out/petitepass-${VERSION}-${platform}.zip" petitepass.exe)
+            else
+              chmod +x "$dir/petitepass"
+              tar -czf "$out/petitepass-${VERSION}-${platform}.tar.gz" -C "$dir" petitepass
+            fi
+          done
+          (cd dist && sha256sum ./* | sed 's|\./||' | tee SHA256SUMS.txt)
+          ls -l dist
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: ${{ needs.version.outputs.tag }}
+          prerelease: ${{ needs.version.outputs.prerelease == 'true' }}
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS.txt
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
