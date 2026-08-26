@@ -1,7 +1,6 @@
-from peewee import DoesNotExist
 from PyQt5.QtWidgets import QDialog, QFormLayout, QLabel, QLineEdit, QMessageBox, QPushButton
 
-from core.database import Password
+from core.vault import VAULT, CredentialNotFoundError, VaultError
 
 
 class DeletePasswordDialog(QDialog):
@@ -21,17 +20,7 @@ class DeletePasswordDialog(QDialog):
     def deletePassword(self):
         name = self.nameField.text()
 
-        try:
-            entry = Password.get(Password.name == name)
-        except DoesNotExist:
-            QMessageBox.warning(
-                self, "Error",
-                "The name does not exist! Please type an existing name.")
-            return
-        except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
-            return
-
+        # Confirm before a destructive, irreversible operation.
         confirm = QMessageBox.question(
             self, "Confirm deletion",
             f"Permanently delete the entry '{name}'?",
@@ -40,9 +29,14 @@ class DeletePasswordDialog(QDialog):
             return
 
         try:
-            entry.delete_instance()
-        except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
+            VAULT.delete(name)
+        except CredentialNotFoundError:
+            QMessageBox.warning(
+                self, "Error",
+                "The name does not exist! Please type an existing name.")
+            return
+        except VaultError as exc:
+            QMessageBox.warning(self, "Error", str(exc))
             return
 
         QMessageBox.information(

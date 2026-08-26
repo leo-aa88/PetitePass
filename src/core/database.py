@@ -3,9 +3,9 @@
 Only the schema lives here now. The old module-level CLI functions
 (``create_password``/``update_password``/``change_db_password``/...) that used
 ``except Exception: create_anyway`` control flow and hand-built ``PRAGMA`` SQL
-have been removed. The database this model binds to is owned by
-:mod:`core.vault`; the GUI dialogs still perform CRUD through this model
-directly (moving that into a Vault service layer is Phase 2).
+have been removed. Both the database binding and all credential CRUD are owned
+by :mod:`core.vault`; this model is an implementation detail of the vault and
+the GUI never touches it directly.
 """
 import datetime
 

@@ -1,7 +1,6 @@
-from peewee import IntegrityError
 from PyQt5.QtWidgets import QDialog, QFormLayout, QLabel, QLineEdit, QMessageBox, QPushButton
 
-from core.database import Password
+from core.vault import VAULT, DuplicateCredentialError, VaultError
 
 
 class PasswordDialog(QDialog):
@@ -24,35 +23,16 @@ class PasswordDialog(QDialog):
         layout.addWidget(self.buttons)
 
     def savePassword(self):
-        name = self.nameField.text()
-        username = self.usernameField.text()
-        password = self.passwordField.text()
-
-        if not name:
-            QMessageBox.warning(self, "Error", "The name cannot be empty.")
-            return
-        if not password:
-            QMessageBox.warning(self, "Error", "The password cannot be empty.")
-            return
-
         try:
-            # Primary guard is the DB unique index (added on create and migrated
-            # in on open). The application-level pre-check is a fallback for
-            # legacy vaults whose index could not be built because they already
-            # contained duplicate names.
-            if Password.select().where(Password.name == name).exists():
-                QMessageBox.warning(
-                    self, "Error",
-                    "That name already exists. Please choose another name.")
-                return
-            Password.create(name=name, username=username, password=password)
-        except IntegrityError:
+            VAULT.add(self.nameField.text(), self.usernameField.text(),
+                      self.passwordField.text())
+        except DuplicateCredentialError:
             QMessageBox.warning(
                 self, "Error",
                 "That name already exists. Please choose another name.")
             return
-        except Exception as exc:
-            QMessageBox.critical(self, "Error", str(exc))
+        except VaultError as exc:
+            QMessageBox.warning(self, "Error", str(exc))
             return
 
         QMessageBox.information(
