@@ -197,7 +197,10 @@ PetitePass/
 │   └── gui/                   # PyQt5 dialogs and main window
 ├── tests/                     # pytest suite (real SQLCipher) + GUI smoke test
 ├── docs/                      # DESIGN.md, TUTORIAL.md
-└── .cursor/, AGENTS.md, CLAUDE.md
+├── .cursor/
+│   ├── skills/                # Agent Skills: implement-feature, bugfix, code-review
+│   └── rules/                 # always-on project rules (security invariants)
+└── AGENTS.md, CLAUDE.md       # agent guidance
 ```
 
 * * *
