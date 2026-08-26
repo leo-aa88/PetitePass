@@ -35,7 +35,7 @@ from playhouse.sqlcipher_ext import SqlCipherDatabase
 
 from core.credential import Credential
 from core.database import Password
-from core.paths import db_path, secure_existing_file
+from core.paths import db_path, fsync_dir, fsync_file, secure_existing_file
 
 
 class VaultError(Exception):
@@ -89,14 +89,46 @@ _SENTINEL = f"SELECT 1 FROM {_TABLE} LIMIT 1"
 # Suffix for the transient rekey working copy (see module docstring).
 _REKEY_TMP_SUFFIX = ".rekey.tmp"
 
+# SQLCipher cipher parameters, pinned explicitly rather than inherited from
+# whatever the linked sqlcipher3 build happens to default to. These are the
+# SQLCipher 4 defaults, so existing vaults created before pinning open
+# unchanged; owning them in code means a future library bump that changes a
+# default cannot silently make old vaults unreadable. Applied on every
+# connection (peewee runs them right after PRAGMA key).
+_CIPHER_PRAGMAS = [
+    ("cipher_page_size", 4096),
+    ("kdf_iter", 256000),
+    ("cipher_hmac_algorithm", "HMAC_SHA512"),
+    ("cipher_kdf_algorithm", "PBKDF2_HMAC_SHA512"),
+]
+
+
+def _make_db(path, master):
+    """Construct a SqlCipherDatabase with the pinned cipher configuration."""
+    return SqlCipherDatabase(str(path), passphrase=master, pragmas=_CIPHER_PRAGMAS)
+
 
 class Vault:
     """Owns the encrypted database connection and the model binding."""
 
     def __init__(self, path=None):
-        self._path = str(path) if path is not None else str(db_path())
+        # Resolve the default path lazily (on first use), so constructing the
+        # module-level VAULT singleton at import time does not trigger data-dir
+        # creation or legacy migration as a side effect.
+        self._explicit_path = str(path) if path is not None else None
+        self._resolved_path = None
         self._db = None
         self._master = None  # held in memory only while unlocked
+
+    @property
+    def _path(self) -> str:
+        # Resolve once and cache, so db_path() (and any legacy migration it
+        # performs) runs a single time rather than on every attribute access --
+        # in particular, rekey must not re-enter migration while a connection is
+        # live.
+        if self._resolved_path is None:
+            self._resolved_path = self._explicit_path or str(db_path())
+        return self._resolved_path
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -116,7 +148,7 @@ class Vault:
             raise VaultExistsError("A vault already exists at this location.")
 
         previous = Password._meta.database
-        db = SqlCipherDatabase(self._path, passphrase=master)
+        db = _make_db(self._path, master)
         # create_tables acts through the model's bound database, so binding must
         # precede it here; on failure we restore the previous bind and remove
         # the half-written file so a retry is not blocked by VaultExistsError.
@@ -190,7 +222,7 @@ class Vault:
         try:
             shutil.copy2(self._path, tmp)
             secure_existing_file(tmp)
-            self._fsync_file(tmp)
+            fsync_file(tmp)
 
             work = self._connect_verified(tmp, current)  # current must open the copy
             try:
@@ -200,7 +232,7 @@ class Vault:
 
             # Prove the new key decrypts the copy on a fresh connection.
             self._safe_close(self._connect_verified(tmp, new))
-            self._fsync_file(tmp)
+            fsync_file(tmp)
         except Exception as exc:
             # The original vault was never touched; drop the copy and restore the
             # session on the old key.
@@ -223,7 +255,7 @@ class Vault:
         # Committed. The on-disk vault is now keyed with `new` whether or not the
         # session can be rebound, so advance the master and report a *rotation*
         # failure (not an auth failure) if reopening fails.
-        self._fsync_dir(os.path.dirname(self._path) or ".")
+        fsync_dir(os.path.dirname(self._path) or ".")
         secure_existing_file(self._path)
         self._master = new
         try:
@@ -382,7 +414,7 @@ class Vault:
 
         Returns an open, unbound connection; the caller owns its lifecycle.
         """
-        db = SqlCipherDatabase(path, passphrase=master)
+        db = _make_db(path, master)
         try:
             db.connect()
             db.execute_sql(_SENTINEL).fetchone()
@@ -412,31 +444,6 @@ class Vault:
                 f"CREATE UNIQUE INDEX IF NOT EXISTS "
                 f"{_TABLE}_name_unique ON {_TABLE} (name)")
         except (DatabaseError, IntegrityError):
-            pass
-
-    @staticmethod
-    def _fsync_file(path: str) -> None:
-        # Flush the working copy to disk before it is committed with os.replace.
-        # This is the durability barrier for the copy, so a failure must NOT be
-        # swallowed: it propagates and aborts the rekey with the vault unchanged.
-        fd = os.open(path, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-
-    @staticmethod
-    def _fsync_dir(directory: str) -> None:
-        # Durably record the rename after the commit. Directory fsync is not
-        # supported on every platform (e.g. Windows) and runs post-commit, so
-        # here -- unlike _fsync_file -- failure is genuinely non-fatal.
-        try:
-            fd = os.open(directory, os.O_RDONLY)
-            try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-        except OSError:
             pass
 
     @staticmethod

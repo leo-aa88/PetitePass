@@ -1,3 +1,26 @@
+[project]
+name = "petitepass"
+version = "2.0.5"
+description = "Simple and secure lightweight password manager (SQLCipher + PyQt5)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Leonardo Araujo", email = "leonardo.aa88@gmail.com" }]
+dependencies = [
+    "PyQt5==5.15.11",
+    "peewee==4.4.0",
+    "platformdirs==4.11.4",
+    "sqlcipher3-binary==0.6.0",
+    "zxcvbn==4.5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/leo-aa88/PetitePass"
+
+# NOTE: the application is distributed as a PyInstaller binary / .deb (see the
+# Makefile), not as a pip-installable wheel, so no [build-system] is declared.
+# This file is the single home for project metadata and tool configuration.
+
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
@@ -9,6 +32,20 @@ src = ["src", "tests"]
 # pre-existing convention, so BLE001/N999 are not enabled.
 select = ["E", "F", "I"]
 ignore = ["E501"]
+
+[tool.mypy]
+# Type-checking is scoped to the logic core. The GUI (PyQt5) ships no type
+# information, so checking it would be noise, not signal.
+files = ["src/core"]
+python_version = "3.10"
+mypy_path = "src"
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+# Third-party packages without type stubs.
+module = ["peewee", "playhouse.*", "sqlcipher3.*", "zxcvbn", "platformdirs"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
