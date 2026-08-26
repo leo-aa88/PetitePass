@@ -7,13 +7,16 @@ import os
 import sys
 import tempfile
 
-# Redirect the data dir on every platform *before* importing anything that
-# computes the vault path, so the smoke test never touches the real vault.
-# Linux/macOS read HOME/XDG_DATA_HOME; platformdirs on Windows reads
-# WIN_PD_OVERRIDE_LOCAL_APPDATA before resolving the real %LOCALAPPDATA%.
+# Redirect both the data dir and the home dir on every platform *before*
+# importing anything that computes the vault path, so the smoke test never
+# touches (or migrates + deletes) the real vault. The new data dir comes from
+# XDG_DATA_HOME/HOME (Unix) or WIN_PD_OVERRIDE_LOCAL_APPDATA (Windows); the
+# legacy dir comes from Path.home(), which reads HOME on Unix but USERPROFILE
+# on Windows.
 _TMP = tempfile.mkdtemp()
 _DATA = os.path.join(_TMP, "data")
 os.environ["HOME"] = _TMP
+os.environ["USERPROFILE"] = _TMP
 os.environ["XDG_DATA_HOME"] = _DATA
 os.environ["WIN_PD_OVERRIDE_LOCAL_APPDATA"] = _DATA
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

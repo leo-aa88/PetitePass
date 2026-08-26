@@ -12,20 +12,25 @@ MASTER = "correct horse battery staple"
 
 @pytest.fixture
 def isolated_dirs(tmp_path, monkeypatch):
-    """Point every platform's data-dir source at throwaway locations.
+    """Point every platform's data-dir AND home source at throwaway locations.
 
-    Linux/macOS derive from HOME (+ XDG_DATA_HOME on Linux); Windows uses
-    LOCALAPPDATA. All three are redirected so the suite cannot touch a real
-    vault regardless of the platform it runs on. ``tmp_path`` is the common
-    isolation root, since the exact per-platform layout below it differs.
+    Two lookups must be isolated: the new data dir (``platformdirs``) and the
+    legacy home dir (``Path.home()``), the latter being what ``_migrate``
+    deletes on success. Their env sources differ per platform:
+
+    * new dir  -- Linux/macOS: XDG_DATA_HOME/HOME; Windows: WIN_PD_OVERRIDE_LOCAL_APPDATA
+    * home dir -- Linux/macOS: HOME; Windows: USERPROFILE (``Path.home()`` does
+      not read HOME on Windows, bpo-36264)
+
+    All of these are redirected so the suite cannot touch a real vault on any
+    platform. ``tmp_path`` is the common isolation root.
     """
     home = tmp_path / "home"
     data = tmp_path / "xdg-data"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("XDG_DATA_HOME", str(data))
-    # platformdirs reads WIN_PD_OVERRIDE_LOCAL_APPDATA before touching the real
-    # %LOCALAPPDATA% (which it resolves via ctypes, not the env var).
     monkeypatch.setenv("WIN_PD_OVERRIDE_LOCAL_APPDATA", str(data))
     return tmp_path, home
 
