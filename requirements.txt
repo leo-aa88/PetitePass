@@ -4,7 +4,7 @@
 #  which the application imports.)
 PyQt5==5.15.11
 peewee==4.4.0
-platformdirs==4.11.4
+platformdirs==4.11.5
 # sqlcipher3 (not sqlcipher3-binary): ships prebuilt wheels for Linux, macOS,
 # and Windows. sqlcipher3-binary is Linux-x86_64 only.
 sqlcipher3==0.6.2
