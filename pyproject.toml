@@ -9,7 +9,7 @@ authors = [{ name = "Leonardo Araujo", email = "leonardo.aa88@gmail.com" }]
 dependencies = [
     "PyQt5==5.15.11",
     "peewee==4.4.0",
-    "platformdirs==4.11.4",
+    "platformdirs==4.11.5",
     "sqlcipher3==0.6.2",
     "zxcvbn==4.5.0",
 ]
