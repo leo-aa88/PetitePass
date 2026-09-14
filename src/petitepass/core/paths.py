@@ -137,9 +137,10 @@ def fsync_file(path) -> None:
 
     A failure is NOT swallowed: it propagates so the caller can abort before the
     commit, leaving the original untouched. Used by both the legacy migration
-    here and Vault.rekey.
+    here and Vault.rekey. The descriptor is writable because Windows requires
+    write access for FlushFileBuffers, which backs os.fsync there.
     """
-    fd = os.open(str(path), os.O_RDONLY)
+    fd = os.open(str(path), os.O_RDWR)
     try:
         os.fsync(fd)
     finally:

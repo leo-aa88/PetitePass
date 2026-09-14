@@ -67,6 +67,29 @@ def test_data_dir_calls_platformdirs_with_appauthor_false(isolated_dirs, monkeyp
     assert seen["kwargs"].get("appauthor") is False
 
 
+def test_fsync_file_opens_with_write_access(tmp_path, monkeypatch):
+    """The descriptor must satisfy Windows FlushFileBuffers requirements."""
+    target = tmp_path / "vault.db"
+    target.write_bytes(b"vault")
+    opened = []
+    flushed = []
+    closed = []
+
+    def spy_open(path, flags):
+        opened.append((path, flags))
+        return 73
+
+    monkeypatch.setattr(os, "open", spy_open)
+    monkeypatch.setattr(os, "fsync", flushed.append)
+    monkeypatch.setattr(os, "close", closed.append)
+
+    paths.fsync_file(target)
+
+    assert opened == [(str(target), os.O_RDWR)]
+    assert flushed == [73]
+    assert closed == [73]
+
+
 def test_fresh_install_uses_data_dir(isolated_dirs):
     assert paths.db_path() == paths.data_dir() / paths.DB_FILENAME
 
