@@ -104,5 +104,7 @@ class AuthDialog(QDialog):
         except VaultError as exc:
             QMessageBox.critical(self, "Error", str(exc))
             return
+        # Drop the widget-held copy as soon as the vault has the secret.
+        self.passwordField.clear()
         self.login_successful.emit()
         self.accept()

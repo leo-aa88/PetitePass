@@ -47,5 +47,7 @@ class CreatePasswordDialog(QDialog):
             self.reject()
             return
 
+        self.passwordField.clear()
+        self.confirmPasswordField.clear()
         self.password_created.emit()
         self.accept()

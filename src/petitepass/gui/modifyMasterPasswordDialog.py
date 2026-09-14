@@ -74,6 +74,9 @@ class ModifyMasterPasswordDialog(QDialog):
             QMessageBox.critical(self, "Error", str(exc))
             return
 
+        self.currentPasswordField.clear()
+        self.passwordField.clear()
+        self.confirmPasswordField.clear()
         QMessageBox.information(
             self, "Success", "The master password was modified successfully.")
         self.accept()
