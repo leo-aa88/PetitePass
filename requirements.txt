@@ -3,9 +3,9 @@
 #  NumPy, Numba, gTTS, pydub, requests and matplotlib's font stack, none of
 #  which the application imports.)
 PyQt5==5.15.11
-peewee==4.5.2
-platformdirs==4.12.2
+peewee==4.5.3
+platformdirs==4.12.4
 # sqlcipher3 (not sqlcipher3-binary): ships prebuilt wheels for Linux, macOS,
 # and Windows. sqlcipher3-binary is Linux-x86_64 only.
-sqlcipher3==0.6.2
+sqlcipher3==0.6.3
 zxcvbn==4.5.0
