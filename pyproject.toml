@@ -8,9 +8,9 @@ license = { text = "GPL-3.0-or-later" }
 authors = [{ name = "Leonardo Araujo", email = "leonardo.aa88@gmail.com" }]
 dependencies = [
     "PyQt5==5.15.11",
-    "peewee==4.5.2",
-    "platformdirs==4.12.2",
-    "sqlcipher3==0.6.2",
+    "peewee==4.5.3",
+    "platformdirs==4.12.4",
+    "sqlcipher3==0.6.3",
     "zxcvbn==4.5.0",
 ]
 
