@@ -10,7 +10,7 @@ dependencies = [
     "PyQt5==5.15.11",
     "peewee==4.5.3",
     "platformdirs==4.12.4",
-    "sqlcipher3==0.6.3",
+    "sqlcipher3==0.6.4",
     "zxcvbn==4.5.0",
 ]
 
