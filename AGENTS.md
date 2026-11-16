@@ -9,31 +9,36 @@ PetitePass is a local, offline password manager. Credentials live in a single SQ
 ## Setup, build, test
 
 ```bash
+make setup                             # create .venv (then activate it)
 make install-dev                       # runtime + dev tooling in the active venv
 make lint                              # ruff check src tests
 make typecheck                         # mypy (scoped to src/petitepass/core)
 make test                              # pytest against real SQLCipher
-QT_QPA_PLATFORM=offscreen python tests/smoke_gui.py   # headless GUI smoke test
+make smoke                             # headless GUI smoke test (offscreen)
+make check                             # lint + typecheck + test + smoke — run before a PR
 ```
 
 The pytest suite links against **real SQLCipher** (`sqlcipher3`, which ships cross-platform wheels). Do not mock the database in security tests — the whole point is to exercise real encryption. SQLCipher prints `hmac check failed` lines to stderr on wrong-key tests; that is expected.
 
 ## Project layout
 
+- `src/petitepass/app.py` — entry point (`petitepass`): `--version`, `--help`, and a Qt-free `--selftest` (a real SQLCipher create → add → reopen → read round-trip, plus a wordlist check) that the release workflow runs against every built binary.
 - `src/petitepass/core/vault.py` — the `Vault`: auth, rekey, backup/restore, CRUD. Almost all logic lives here.
 - `src/petitepass/core/{database,credential,paths,strength,utils}.py` — schema, domain object, filesystem, policy, generator.
-- `src/petitepass/gui/` — PyQt5 dialogs and `mainWindow`. Presentation only.
+- `src/petitepass/core/data/10k-most-common.txt` — the bundled common-password blocklist. It is package data (`pyproject.toml`) and `make build` passes it to PyInstaller with `--add-data`; if it goes missing, `is_common()` quietly returns `False`, so keep both in sync (`--selftest` checks it).
+- `src/petitepass/gui/` — PyQt5 dialogs, `mainWindow`, and `theme.py` (app-wide style). Presentation only.
 - `tests/` — pytest suite + `smoke_gui.py` (a runnable headless script, not a pytest module).
 - `docs/` — `DESIGN.md` (architecture + threat model + invariants), `TUTORIAL.md`.
+- `SECURITY.md` — how to report vulnerabilities (not via public issues). `AUDIT.md` — the historical audit of the *pre-rework* code; it describes the old design, not the current one.
 
 ## Non-negotiable invariants
 
 These are also listed in [docs/DESIGN.md §16](docs/DESIGN.md#16-invariants-do-not-regress) (12 in total; the subset below is the day-to-day core). A change that breaks one is a security regression even if CI is green:
 
 1. **Authentication = decryption.** A session is valid only if the vault decrypts *and* the `password` table is present. Never reintroduce a sidecar verifier.
-2. **No hand-built PRAGMA.** The master password reaches SQLCipher only through peewee's escaping `passphrase=` / `rekey()` API. Never `execute_sql(f"PRAGMA key = '{...}'")`.
+2. **Safe key path; no hand-built PRAGMA.** Key material reaches SQLCipher only through a reviewed, injection-safe keying path. Today that is peewee's escaping `passphrase=` / `rekey()` API. Never interpolate key material into SQL yourself — e.g. `execute_sql(f"PRAGMA key = '{...}'")`. (A future raw-key vault format would need its own reviewed path; see DESIGN §7 and invariant 2.)
 3. **Reject empty/NUL master** before creating or replacing any file (an empty passphrase yields a plaintext database).
-4. **Atomic vault replacement.** Rekey/restore/migration work on a verified copy and commit at a single `os.replace`. The `fsync` of the copy is fatal (never swallowed). *Before* the commit, a failure leaves the previous vault openable under the current master. *After* the commit, the vault is the new one — see #5. (Only `paths._migrate`, whose post-commit work is pure cleanup, never flips its result.)
+4. **Atomic vault-file replacement.** Rekey, restore, and legacy-vault relocation (`paths._migrate`) work on a verified copy and commit at a single `os.replace`. The `fsync` of the copy is fatal (never swallowed). *Before* the commit, a failure leaves the previous vault openable under the current master. *After* the commit, the vault is the new one — see #5. (Only `paths._migrate`, whose post-commit work is pure cleanup, never flips its result.) This protocol is for *replacing the file*. An in-database schema change (adding an index or column) is not a file replacement: it should run inside a database transaction, without copying the vault (DESIGN §12).
 5. **Distinct post-commit errors.** A reopen failure *after* the `os.replace` commit is `VaultRotatedError` (rekey) / `VaultRestoredError` (restore) — never an auth error. The change committed; the old master no longer opens the vault. This is a real failure of the operation; do not report it as "unchanged" or swallow it.
 6. **GUI never touches the ORM.** All credential access goes through `VAULT.*`. The GUI catches `VaultError` (and subclasses) only; the service translates every peewee `DatabaseError` into `VaultError`.
 7. **Don't load ciphertext to draw the list.** `list_credentials()` selects non-password columns only.
@@ -56,6 +61,7 @@ PetitePass optimizes for **maximum security per line of code, dependency, and fe
 ## Testing expectations
 
 - New security-relevant behavior ships with tests against real SQLCipher, including the failure paths (wrong/empty/NUL master, crash between copy and replace, post-commit reopen failure).
+- Failure-path tests that mock `fsync` / `os.replace` are not enough on their own: each vault-replacing operation must also be shown to *succeed*, unmocked, on every supported OS (DESIGN §15). The Windows `fsync` bug (#38) passed every mocked test. CI's pytest job currently runs on Linux only, and the release workflow's Windows job only runs `--selftest` (which doesn't exercise rekey/backup/restore) — so a change to platform-sensitive durability code needs a real run on the affected OS until per-OS coverage lands (#47).
 - Prefer tests that would fail if the contract were reverted — assert the *mechanism*, not a tautology (e.g. spy the SELECT columns, don't just check a dataclass shape).
 - GUI-level behavior is covered by `tests/smoke_gui.py`, which redirects `HOME` / `XDG_DATA_HOME` / `USERPROFILE` / `WIN_PD_OVERRIDE_LOCAL_APPDATA` so it never touches a real vault.
 

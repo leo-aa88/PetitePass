@@ -17,15 +17,18 @@ threat model / invariants in [docs/DESIGN.md](../../docs/DESIGN.md).
 - **Authentication is decryption.** A session is valid only if the vault
   decrypts *and* the `password` table is present. Never reintroduce a sidecar
   verifier or a boolean "is authenticated" flag.
-- **No hand-built PRAGMA.** The master password reaches SQLCipher only through
-  peewee's escaping `passphrase=` / `rekey()` API. Never
+- **Safe key path; no hand-built PRAGMA.** Key material reaches SQLCipher only
+  through a reviewed, injection-safe keying path — today peewee's escaping
+  `passphrase=` / `rekey()` API. Never
   `execute_sql(f"PRAGMA key = '{master}'")`.
 - **Reject empty/NUL master** before creating or replacing any file.
-- **Atomic vault replacement.** Rekey / restore / migration work on a *verified
-  copy* and commit at a single `os.replace`; `fsync` of the copy is fatal.
-  *Before* the commit a failure leaves the previous vault openable under the
-  current master. *After* the commit the vault is the new one (only
-  `paths._migrate`, whose post-commit work is pure cleanup, never flips).
+- **Atomic vault-file replacement.** Rekey / restore / legacy relocation
+  (`paths._migrate`) work on a *verified copy* and commit at a single
+  `os.replace`; `fsync` of the copy is fatal. *Before* the commit a failure
+  leaves the previous vault openable under the current master. *After* the
+  commit the vault is the new one (only `paths._migrate`, whose post-commit work
+  is pure cleanup, never flips). In-database schema changes don't replace the
+  file; they use a transaction (DESIGN §12).
 - **Distinct post-commit errors.** A reopen failure *after* `os.replace` is
   `VaultRotatedError` / `VaultRestoredError`, never an auth error. The change
   committed; the old master no longer opens the vault. Don't swallow it or call
@@ -39,10 +42,16 @@ threat model / invariants in [docs/DESIGN.md](../../docs/DESIGN.md).
 - **Never load password ciphertext to render the list** (`list_credentials`
   selects non-password columns).
 
+These are the security core; the full set of 12 invariants is in DESIGN §16.
+Weigh any new feature against the non-goals (DESIGN §2) and the
+feature-admission checklist (DESIGN §4) — declining a feature is a normal outcome.
+
 ## Workflow
 
 - Verify against **real SQLCipher**; do not mock the database in security tests.
-- Run `make lint && make typecheck && make test` and the headless GUI smoke test
-  (`QT_QPA_PLATFORM=offscreen python tests/smoke_gui.py`) before proposing a change.
+- Test success paths for real too, not only mocked failures; platform-sensitive
+  durability code must run on the OS it targets.
+- Run `make check` (lint, typecheck, tests, headless GUI smoke test) before
+  proposing a change.
 - Keep the runtime dependency set minimal; `pip-audit` gates CI.
 - Keep docstrings/README truthful to the code.
