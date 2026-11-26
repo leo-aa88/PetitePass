@@ -27,6 +27,14 @@ MIN_MASTER_LENGTH = 12
 # without an offline fast-hash attack".
 MIN_MASTER_SCORE = 3
 
+# zxcvbn 4.5.0 refuses inputs longer than this and raises ValueError. The cap is
+# zxcvbn's, not the vault's: SQLCipher has no master-password length limit, so a
+# long diceware passphrase (the exact thing a security-conscious user picks)
+# must not be rejected. We score a prefix of at most this many characters for
+# the advisory estimate; truncation can only under-state strength, never
+# inflate it, so the policy gate stays conservative.
+ZXCVBN_MAX_LENGTH = 72
+
 
 @dataclass
 class Strength:
@@ -37,8 +45,14 @@ class Strength:
 
 
 def evaluate(password: str) -> Strength:
-    """Return a guessability estimate for advisory display."""
-    result = zxcvbn(password)
+    """Return a guessability estimate for advisory display.
+
+    Inputs longer than :data:`ZXCVBN_MAX_LENGTH` are scored on their prefix:
+    zxcvbn raises ``ValueError`` above its own limit, and the vault has no
+    corresponding cap, so a long passphrase must still receive an estimate
+    rather than crashing the GUI slot (#37).
+    """
+    result = zxcvbn(password[:ZXCVBN_MAX_LENGTH])
     feedback = result.get("feedback", {}) or {}
     crack = result["crack_times_display"]["offline_slow_hashing_1e4_per_second"]
     return Strength(
